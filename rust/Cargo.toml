@@ -1,0 +1,6 @@
+[package]
+name = "vehicle_smart_telemetry"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Gateway, receiver, ECUs and event counter"
