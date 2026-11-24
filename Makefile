@@ -1,4 +1,4 @@
-# jedge-stream: the decoded signals of a CAN recording, from the vehicle Pi to the gateway Pi,
+# vehicle_smart_telemetry: the decoded signals of a CAN recording, from the vehicle Pi to the gateway Pi,
 # in real time. Run `make` alone to see the commands.
 #
 # Every setting below can be changed on the command line, for example:
@@ -105,7 +105,7 @@ clean:
 -include bench.mk
 
 PI_USER  ?= pi
-DIR      ?= bench/jedge-stream
+DIR      ?= bench/vehicle_smart_telemetry
 REPO     ?= $(shell git config --get remote.origin.url)
 VEHICLE  ?= 10.77.0.2
 IFACE    ?= eth0
