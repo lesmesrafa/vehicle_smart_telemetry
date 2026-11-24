@@ -5,6 +5,7 @@ pub mod dbc;
 pub mod metrics;
 pub mod options;
 pub mod wire;
+pub mod timing;
 
 use std::io;
 
