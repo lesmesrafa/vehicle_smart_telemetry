@@ -2,6 +2,7 @@
 // Library of the module testbed: what the gateway, ECUs and event counter share.
 pub mod candump;
 pub mod dbc;
+pub mod options;
 
 use std::io;
 
