@@ -1,0 +1,9 @@
+[package]
+name = "vehicle_telemetry"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Streams the decoded signals of a CAN recording from the vehicle Pi to the gateway Pi in real time"
+
+# No external libraries, only the Rust standard library
+[dependencies]

@@ -1,6 +1,0 @@
-[package]
-name = "vehicle_telemetry"
-version = "0.2.0"
-edition = "2021"
-rust-version = "1.75"
-description = "Gateway, receiver, ECUs and event counter"

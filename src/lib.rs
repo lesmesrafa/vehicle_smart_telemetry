@@ -2,9 +2,13 @@
 // Library of the module testbed: what the gateway, ECUs and event counter share.
 pub mod candump;
 pub mod dbc;
+pub mod metrics;
 pub mod options;
 
 use std::io;
+
+/// Port the gateway listens on when no other is given.
+pub const DEFAULT_PORT: u16 = 7700;
 
 /// Adds to an I/O error the name of the file or bus that caused it
 pub fn with_name(name: &str, error: io::Error) -> io::Error {
