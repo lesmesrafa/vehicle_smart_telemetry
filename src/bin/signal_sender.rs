@@ -177,8 +177,8 @@ fn stream(
             }
             continue;
         };
-        let (t0, clock) = *start.get_or_insert_with(|| (frame.t, Instant::now()));
-        let t = frame.t - t0;
+        let (t0, clock) = *start.get_or_insert_with(|| (frame.time, Instant::now()));
+        let t = frame.time - t0;
         if limit.is_some_and(|limit| t >= limit) {
             break;
         }
