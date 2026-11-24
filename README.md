@@ -50,7 +50,7 @@ The project has to be in a git repository that the Pis can clone, and your compu
 `git` and `ssh` (Linux, macOS or WSL). Give it the addresses at which it reaches each Pi:
 
 ```bash
-make setup GATEWAY_IP=192.168.1.50 VEHICLE_IP=192.168.1.51
+make setup GATEWAY_IP=100.70.199.67 VEHICLE_IP=100.97.160.33 PI_USER=ubuntu REPO=https://github.com/lesmesrafa/vehicle_smart_telemetry.git
 ```
 
 On each Pi, through ssh, that command:
