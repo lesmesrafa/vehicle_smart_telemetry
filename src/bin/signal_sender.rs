@@ -1,11 +1,11 @@
 //! Vehicle side: reads a CAN recording, decodes every frame with the DBC and sends the decoded
 //! signals to the gateway at the pace of the recording.
 
-use jedge_stream::candump::parse_line;
-use jedge_stream::dbc::Dbc;
-use jedge_stream::options::{fail, Args};
-use jedge_stream::timing::Delays;
-use jedge_stream::{wire, with_name, DEFAULT_PORT};
+use vehicle_smart_telemetry::candump::parse_line;
+use vehicle_smart_telemetry::dbc::Dbc;
+use vehicle_smart_telemetry::options::{fail, Args};
+use vehicle_smart_telemetry::timing::Delays;
+use vehicle_smart_telemetry::{wire, with_name, DEFAULT_PORT};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::File;
