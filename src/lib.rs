@@ -4,6 +4,7 @@ pub mod candump;
 pub mod dbc;
 pub mod metrics;
 pub mod options;
+pub mod wire;
 
 use std::io;
 
