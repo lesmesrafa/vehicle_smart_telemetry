@@ -39,6 +39,15 @@ pub fn memory_mb_of(pid: &str) -> (f64, f64) {
     (field("VmRSS:"), field("VmHWM:"))
 }
 
+/// Whether the process `pid` is still running. One that has ended, but whose parent has not yet
+/// taken note of it, is still listed, in the state Z, and does not count.
+pub fn is_running(pid: &str) -> bool {
+    let Ok(text) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    text.rsplit_once(')').is_some_and(|(_, tail)| !tail.trim_start().starts_with('Z'))
+}
+
 /// The number of the first process on this machine with that name, if there is one.
 pub fn process_named(name: &str) -> Option<String> {
     for entry in fs::read_dir("/proc").ok()?.flatten() {
@@ -48,4 +57,19 @@ pub fn process_named(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+// Only where there is a /proc to read: on another system every measure is 0, and that is all
+// these functions promise there.
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn this_process_runs_and_one_that_does_not_exist_does_not() {
+        assert!(is_running("self"));
+        assert!(!is_running("no-such-process"));
+        assert_eq!(process_named("no-such-process"), None);
+        assert!(cpu_seconds() >= 0.0 && memory_mb().0 > 0.0);
+    }
 }

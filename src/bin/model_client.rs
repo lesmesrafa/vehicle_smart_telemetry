@@ -12,7 +12,7 @@ use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use vehicle_smart_telemetry::metrics::{cpu_seconds, cpu_seconds_of, memory_mb, memory_mb_of, process_named};
+use vehicle_smart_telemetry::metrics::{cpu_seconds, cpu_seconds_of, is_running, memory_mb, memory_mb_of, process_named};
 use vehicle_smart_telemetry::model::{self, Frame};
 use vehicle_smart_telemetry::options::Args;
 use vehicle_smart_telemetry::with_name;
@@ -29,8 +29,9 @@ use:  model_client --prompts sample/prompts.ndjson
   --process NAME    process whose CPU and memory are measured (default llama-server)
   --follow          keep reading while the file grows, for a receiver that is still running
   --idle S          with --follow, seconds without a new line after which it stops (10)
+  --writer NAME     with --follow, stop when the process that writes the file has ended, not after --idle
   --quiet           do not print each answer";
-const WITH_VALUE: [&str; 5] = ["--prompts", "--answers", "--server", "--process", "--idle"];
+const WITH_VALUE: [&str; 6] = ["--prompts", "--answers", "--server", "--process", "--idle", "--writer"];
 const WITHOUT_VALUE: [&str; 2] = ["--follow", "--quiet"];
 
 /// One question: what goes around each of its windows and what its answers have been.
@@ -240,6 +241,11 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let open = || File::open(&path).map(BufReader::new).map_err(|e| with_name(&path, e));
     let mut reader = open()?;
+    // With --writer the file is followed for as long as the program that writes it runs.
+    let writer = match a.optional("--writer") {
+        Some(name) => Some(process_named(name).ok_or(format!("--writer: no process named {name} is running"))?),
+        None => None,
+    };
 
     let answers = a.text("--answers", "answers.ndjson");
     let mut client = Client {
@@ -251,7 +257,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         answers: BufWriter::new(File::create(&answers).map_err(|e| with_name(&answers, e))?),
         show: !a.enabled("--quiet"),
     };
-    let (mut line, mut read, mut last_news) = (String::new(), 0u64, Instant::now());
+    let (mut line, mut read, mut last_news, mut last_look) = (String::new(), 0u64, Instant::now(), false);
     loop {
         let n = reader.read_line(&mut line)?;
         read += n as u64;
@@ -260,9 +266,20 @@ fn run() -> Result<(), Box<dyn Error>> {
             line.clear();
             last_news = Instant::now();
         } else if n == 0 {
-            // The end of the file, for now or for good.
-            if !follow || last_news.elapsed().as_secs_f64() >= idle_s {
-                break;
+            // The end of the file, for now or for good: there is more to wait for while the
+            // writer runs or, with no writer named, until nothing has come for a while.
+            let waiting = follow
+                && match &writer {
+                    Some(pid) => is_running(pid),
+                    None => last_news.elapsed().as_secs_f64() < idle_s,
+                };
+            if !waiting {
+                // What the writer wrote just before it ended may have come after the last look.
+                if !follow || last_look {
+                    break;
+                }
+                last_look = true;
+                continue;
             }
             // A receiver that starts again writes the file from its beginning.
             if fs::metadata(&path).map_or(0, |file| file.len()) < read {
