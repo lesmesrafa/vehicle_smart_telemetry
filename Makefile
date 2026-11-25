@@ -21,8 +21,38 @@ DEFAULTS  ?= default_quantities.tsv
 PROMPTS   ?=
 RDF       ?=
 JELLY     ?=
+# The language model of the gateway: llama-server of llama.cpp, with one slot per question.
+# `make llama` builds the program and `make weights` downloads the model, both into this folder.
+LLAMA_DIR   ?= llama.cpp
+LLAMA       ?= $(LLAMA_BUILT)
+MODEL       ?= $(MODEL_FILE)
+JOBS        ?= 4
+# The memory, in MB, below which this machine does not try to build llama.cpp.
+BUILD_MIN_MB ?= 3000
+MODEL_PORT  ?= 8080
+SLOTS       ?= 6
+SLOT_TOKENS ?= 1024
+THREADS     ?= 4
+ANSWERS     ?= answers.ndjson
+# With FOLLOW=1, make ask keeps reading PROMPTS while the receiver writes it, and stops after
+# IDLE seconds with nothing new.
+FOLLOW      ?=
+IDLE        ?= 60
 
 BIN := target/release
+
+# llama.cpp, the program that runs the model: its source, pinned to one commit, and where the
+# server is once built.
+LLAMA_REPO   := https://github.com/ggml-org/llama.cpp
+LLAMA_COMMIT := de306972853640223d20ce57a3d9e44f6719d3db
+LLAMA_BUILT  := $(LLAMA_DIR)/build/bin/llama-server
+
+# The weights of LFM2.5-230M at 4 bits, from the repository of Liquid AI on Hugging Face, pinned
+# to one commit. The sha256 is the one that repository gives for the file, 149080928 bytes.
+MODEL_FILE   := models/LFM2.5-230M-Q4_0.gguf
+MODEL_COMMIT := fa224d4cb60cffe61eb58726712ef255bb64d0b7
+MODEL_SHA256 := 430fbec5b1b355e9bb12cd0638c9f2a8f21fedd6eafb4103e42c7e88887daa73
+MODEL_URL    := https://huggingface.co/LiquidAI/LFM2.5-230M-GGUF/resolve/$(MODEL_COMMIT)/LFM2.5-230M-Q4_0.gguf
 
 # The DBC of the car, from the opendbc project of comma.ai, pinned to one commit.
 DBC_COMMIT := 79ddcc7bb72d557fc5b20d038c0fad9c9d423446
@@ -30,7 +60,7 @@ DBC_SHA256 := d7f822e3a8d220cfde83aec2ae4ed28ddbc44a38ff29bea2e12e3e321d73a607
 DBC_URL    := https://raw.githubusercontent.com/commaai/opendbc/$(DBC_COMMIT)/opendbc/dbc/hyundai_2015_ccan.dbc
 
 .DEFAULT_GOAL := help
-.PHONY: help build test dbc graph demo demo-graph receive send expected info clean
+.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights model ask info clean
 
 # What the receiver is told about the knowledge graph.
 KNOWLEDGE = $(if $(GRAPH),--graph $(GRAPH) --questions $(QUESTIONS) $(if $(PROMPTS),--prompts $(PROMPTS)) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)))
@@ -43,6 +73,10 @@ help:
 	@echo "both       make graph      write the knowledge graph of the car, from the DBC"
 	@echo "both       make info       what this machine has: commit, programs, DBC, addresses"
 	@echo "gateway    make receive    wait for the vehicle and show what arrives"
+	@echo "vehicle    make llama      download llama.cpp at its pinned commit and build llama-server"
+	@echo "gateway    make weights    download the weights of the model and check their sha256"
+	@echo "gateway    make model      start the language model (llama-server) and leave it listening"
+	@echo "gateway    make ask        ask the model every window of PROMPTS and show what each answer cost"
 	@echo "vehicle    make send       decode LOG and send it to the gateway in real time"
 	@echo "vehicle    make expected   write expected.ndjson: what the gateway must receive"
 	@echo "vehicle    make dbc        download the DBC and check its sha256"
@@ -53,6 +87,7 @@ help:
 	@echo "computer   make stop       stop both ends"
 	@echo "computer   make status     what each Pi has, and whether the vehicle reaches the gateway"
 	@echo "computer   make update     bring the latest code to the two Pis and build it"
+	@echo "computer   make model-setup  build llama-server on the vehicle, copy it to the gateway, download the weights there"
 	@echo "computer   make data FILE=recording.log        copy a recording to the vehicle"
 	@echo "computer   make compare SAVE=received.ndjson   check that every byte arrived"
 	@echo
@@ -63,6 +98,10 @@ help:
 	@echo "graph:    GRAPH=$(GRAPH) (empty: no knowledge graph) QUESTIONS=$(QUESTIONS)"
 	@echo "          DEFAULTS=$(DEFAULTS) (empty: no default quantities)"
 	@echo "          files where make receive also writes each window: PROMPTS=$(PROMPTS) RDF=$(RDF) JELLY=$(JELLY)"
+	@echo "model:    LLAMA=$(LLAMA) MODEL=$(MODEL) MODEL_PORT=$(MODEL_PORT) THREADS=$(THREADS)"
+	@echo "          LLAMA_DIR=$(LLAMA_DIR) JOBS=$(JOBS) (compilers at once in make llama) BUILD_MIN_MB=$(BUILD_MIN_MB)"
+	@echo "          SLOTS=$(SLOTS) (one per question) SLOT_TOKENS=$(SLOT_TOKENS) (room for one prefix and one window)"
+	@echo "          ANSWERS=$(ANSWERS) FOLLOW=$(FOLLOW) (1: keep reading while the receiver writes) IDLE=$(IDLE)"
 	@echo "bench:    GATEWAY_IP=$(GATEWAY_IP) VEHICLE_IP=$(VEHICLE_IP) PI_USER=$(PI_USER) DIR=$(DIR)"
 
 build:
@@ -111,6 +150,51 @@ expected: build $(DBC)
 	$(BIN)/signal_sender --log $(LOG) --dbc $(DBC) --stdout --speed 0 $(if $(DURATION),--duration $(DURATION)) > expected.ndjson
 	sha256sum expected.ndjson
 
+llama: $(LLAMA_BUILT)
+
+weights: $(MODEL_FILE)
+
+# Only the commit that is used is downloaded, without the history, and only the server is built,
+# as one program that needs no libraries beside it. A machine with little memory does not try:
+# the compilers would not fit. What is missing to build is installed, if sudo asks for no password.
+$(LLAMA_BUILT):
+	@mb=$$(awk '/MemTotal/ { print int($$2 / 1024) }' /proc/meminfo 2> /dev/null); \
+	test "$${mb:-0}" -ge $(BUILD_MIN_MB) || { \
+		echo "this machine has $${mb:-0} MB of memory, and building llama.cpp is not tried below $(BUILD_MIN_MB) MB."; \
+		echo "Build it on the vehicle with make llama and copy $@ here, or from your computer: make model-setup"; \
+		exit 1; }
+	@missing=; for tool in git cmake c++; do command -v $$tool > /dev/null || missing="$$missing $$tool"; done; \
+	test -z "$$missing" || { echo "installing, because these are missing:$$missing"; \
+		sudo -n apt-get update -q && sudo -n apt-get install -y -q git cmake g++; }
+	@test -d $(LLAMA_DIR)/.git || git init -q $(LLAMA_DIR)
+	cd $(LLAMA_DIR) && git fetch -q --depth 1 $(LLAMA_REPO) $(LLAMA_COMMIT) && git checkout -q FETCH_HEAD
+	@test "$$(git -C $(LLAMA_DIR) rev-parse HEAD)" = "$(LLAMA_COMMIT)"
+	cmake -S $(LLAMA_DIR) -B $(LLAMA_DIR)/build -DBUILD_SHARED_LIBS=OFF -DLLAMA_OPENSSL=OFF > $(LLAMA_DIR)/configure.log
+	cmake --build $(LLAMA_DIR)/build -j $(JOBS) --target llama-server
+	@$@ --version
+
+# The file only gets its name once the checksum has matched. A download that was cut goes on
+# from where it stopped; one that ends with other bytes is thrown away.
+$(MODEL_FILE):
+	@mkdir -p $(dir $@)
+	curl -fL --retry 3 -C - --progress-bar -o $@.part $(MODEL_URL)
+	@echo "$(MODEL_SHA256)  $@.part" | sha256sum -c - || { rm -f $@.part; exit 1; }
+	@mv $@.part $@
+
+# The language model, in its own process. Each question gets a slot, where the server keeps the
+# state of the model after the prefix; the context is shared out evenly among the slots. The
+# cache of old prompts in memory is off: on the gateway the memory is for the model.
+# The program and the weights are fetched first if they are the ones this Makefile knows and
+# are not here; with another LLAMA or MODEL, they are yours to bring.
+model: $(filter $(LLAMA_BUILT),$(LLAMA)) $(filter $(MODEL_FILE),$(MODEL))
+	$(LLAMA) -m $(MODEL) --host 127.0.0.1 --port $(MODEL_PORT) --parallel $(SLOTS) \
+		--ctx-size $$(( $(SLOTS) * $(SLOT_TOKENS) )) --threads $(THREADS) --cache-ram 0 --no-webui
+
+# Without PROMPTS it asks the windows of the sample drive, which come with the project.
+ask: build
+	$(BIN)/model_client --prompts $(if $(PROMPTS),$(PROMPTS),sample/prompts.ndjson) --answers $(ANSWERS) \
+		--server 127.0.0.1:$(MODEL_PORT) $(if $(FOLLOW),--follow --idle $(IDLE))
+
 # What this machine has. `make status` asks both Pis for it.
 info:
 	@echo "$$(hostname): $$(git log -1 --format='commit %h, %s' 2> /dev/null || echo 'not a git clone')"
@@ -118,12 +202,15 @@ info:
 	@test -f $(DBC) && echo "  DBC: here" || echo "  DBC: not here (make dbc downloads it)"
 	@test -f "$(GRAPH)" && echo "  knowledge graph: $$(wc -l < $(GRAPH)) triples in $(GRAPH)" || echo "  knowledge graph: not written yet (make graph)"
 	@pgrep -x signal_receiver > /dev/null && echo "  signal_receiver: running" || echo "  signal_receiver: stopped"
+	@command -v $(LLAMA) > /dev/null && echo "  llama-server: here" || echo "  llama-server: not here (make llama builds it; the gateway gets it with make model-setup, from your computer)"
+	@test -f $(MODEL) && echo "  model weights: here" || echo "  model weights: not here (make weights downloads them)"
+	@pgrep -x llama-server > /dev/null && echo "  llama-server: running" || echo "  llama-server: stopped"
 	@pgrep -x signal_sender > /dev/null && echo "  signal_sender: running" || echo "  signal_sender: stopped"
 	@ip -4 -br addr show 2> /dev/null | grep -v '^lo ' | sed 's/^/  address: /'
 
 clean:
 	cargo clean
-	rm -f expected.ndjson received.ndjson .demo_sender.txt .sender.txt signal_graph.nt
+	rm -f expected.ndjson received.ndjson .demo_sender.txt .sender.txt signal_graph.nt answers.ndjson
 
 # ---------------------------------------------------------------------------------------------
 # From your computer: the two Pis, driven through ssh.
@@ -154,7 +241,7 @@ PI_MAKE    := cd $(DIR) && PATH=$$HOME/.cargo/bin:$$PATH make --no-print-directo
 RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) PORT=$(PORT) WATCH=$(WATCH) SAVE=$(SAVE) \
               GRAPH=$(GRAPH) QUESTIONS=$(QUESTIONS) DEFAULTS=$(DEFAULTS) PROMPTS=$(PROMPTS) RDF=$(RDF) JELLY=$(JELLY)
 
-.PHONY: setup update menu run stop status data compare need-bench
+.PHONY: setup update model-setup menu run stop status data compare need-bench
 
 need-bench:
 	@test -n "$(GATEWAY_IP)" && test -n "$(VEHICLE_IP)" || { echo "first: make setup GATEWAY_IP=... VEHICLE_IP=...   (the addresses at which this computer reaches each Pi)"; exit 1; }
@@ -177,6 +264,23 @@ update: need-bench
 	@echo
 	@$(SSH) $(VEHICLE_PI) 'ping -c 3 $(GATEWAY)' || { echo "the vehicle does not reach the gateway at $(GATEWAY): check the cable, or pass GATEWAY=address"; exit 1; }
 
+# Everything the model needs, in one go. The vehicle builds llama-server, because the gateway has
+# no memory for the compilers; the program goes to the gateway through this computer, and both
+# copies must have the same sha256; the gateway runs it once, which shows whether it starts
+# there (the one library it may miss is installed), and downloads the weights.
+model-setup: need-bench
+	@$(SSH) $(VEHICLE_PI) '$(PI_MAKE) llama JOBS=$(JOBS)'
+	@$(SSH) $(GATEWAY_PI) 'mkdir -p $(DIR)/$(dir $(LLAMA_BUILT))'
+	@$(SSH) $(VEHICLE_PI) 'cat $(DIR)/$(LLAMA_BUILT)' | $(SSH) $(GATEWAY_PI) 'cat > $(DIR)/$(LLAMA_BUILT).part'
+	@built=$$($(SSH) $(VEHICLE_PI) 'sha256sum < $(DIR)/$(LLAMA_BUILT)'); \
+	copied=$$($(SSH) $(GATEWAY_PI) 'sha256sum < $(DIR)/$(LLAMA_BUILT).part'); \
+	test -n "$$built" && test "$$built" = "$$copied" || { echo "llama-server: what reached the gateway is DIFFERENT from what the vehicle built"; exit 1; }
+	@echo "llama-server: built on the vehicle and copied to the gateway, same bytes. On the gateway it says:"
+	@$(SSH) $(GATEWAY_PI) 'cd $(DIR) && chmod +x $(LLAMA_BUILT).part && mv $(LLAMA_BUILT).part $(LLAMA_BUILT) && \
+		{ $(LLAMA_BUILT) --version || { sudo -n apt-get install -y -q libgomp1 && $(LLAMA_BUILT) --version; }; }'
+	@$(SSH) $(GATEWAY_PI) '$(PI_MAKE) weights'
+	@echo "the model is ready on the gateway: there, make model starts it"
+
 menu: need-bench
 	@while true; do \
 		echo; \
@@ -187,6 +291,7 @@ menu: need-bench
 		echo "  5) bring the latest code to the two Pis and build it"; \
 		echo "  6) list every command"; \
 		echo "  7) run the sample drive: the knowledge graph and what a model would read"; \
+		echo "  8) get the language model: llama-server and the weights, onto the gateway"; \
 		echo "  q) quit"; \
 		printf "choice: "; \
 		read choice || exit 0; \
@@ -198,6 +303,7 @@ menu: need-bench
 			5) $(MAKE) --no-print-directory update ;; \
 			6) $(MAKE) --no-print-directory help ;; \
 			7) $(MAKE) --no-print-directory run LOG=sample/drive.log DURATION= ;; \
+			8) $(MAKE) --no-print-directory model-setup ;; \
 			q) exit 0 ;; \
 			*) echo "not an option: $$choice" ;; \
 		esac; \
