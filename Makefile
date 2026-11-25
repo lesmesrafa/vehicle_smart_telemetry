@@ -12,6 +12,15 @@ SPEED    ?= 1
 DURATION ?=
 WATCH    ?= WHL_SPD11.WHL_SPD_FL,ESP12.LONG_ACCEL,SAS11.SAS_Angle
 SAVE     ?=
+# The knowledge graph of the gateway. With GRAPH empty the receiver works without it.
+GRAPH     ?= signal_graph.nt
+QUESTIONS ?= questions.tsv
+# The quantities of the signals graph_builder does not name. With DEFAULTS empty the graph has
+# only the quantities written in graph_builder.
+DEFAULTS  ?= default_quantities.tsv
+PROMPTS   ?=
+RDF       ?=
+JELLY     ?=
 
 BIN := target/release
 
@@ -21,12 +30,17 @@ DBC_SHA256 := d7f822e3a8d220cfde83aec2ae4ed28ddbc44a38ff29bea2e12e3e321d73a607
 DBC_URL    := https://raw.githubusercontent.com/commaai/opendbc/$(DBC_COMMIT)/opendbc/dbc/hyundai_2015_ccan.dbc
 
 .DEFAULT_GOAL := help
-.PHONY: help build test dbc demo receive send expected info clean
+.PHONY: help build test dbc graph demo demo-graph receive send expected info clean
+
+# What the receiver is told about the knowledge graph.
+KNOWLEDGE = $(if $(GRAPH),--graph $(GRAPH) --questions $(QUESTIONS) $(if $(PROMPTS),--prompts $(PROMPTS)) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)))
 
 help:
 	@echo "both       make build      compile the two programs"
 	@echo "both       make test       run the unit tests"
 	@echo "both       make demo       both ends on this machine, with 10 s of sample traffic"
+	@echo "both       make demo-graph both ends on this machine, with the sample drive and the knowledge graph"
+	@echo "both       make graph      write the knowledge graph of the car, from the DBC"
 	@echo "both       make info       what this machine has: commit, programs, DBC, addresses"
 	@echo "gateway    make receive    wait for the vehicle and show what arrives"
 	@echo "vehicle    make send       decode LOG and send it to the gateway in real time"
@@ -46,6 +60,9 @@ help:
 	@echo "          DURATION=$(DURATION) (seconds; empty sends the whole recording)"
 	@echo "          SAVE=$(SAVE) (file where make receive also stores what arrives)"
 	@echo "          WATCH=$(WATCH)"
+	@echo "graph:    GRAPH=$(GRAPH) (empty: no knowledge graph) QUESTIONS=$(QUESTIONS)"
+	@echo "          DEFAULTS=$(DEFAULTS) (empty: no default quantities)"
+	@echo "          files where make receive also writes each window: PROMPTS=$(PROMPTS) RDF=$(RDF) JELLY=$(JELLY)"
 	@echo "bench:    GATEWAY_IP=$(GATEWAY_IP) VEHICLE_IP=$(VEHICLE_IP) PI_USER=$(PI_USER) DIR=$(DIR)"
 
 build:
@@ -62,6 +79,11 @@ hyundai_2015_ccan.dbc:
 	echo "$(DBC_SHA256)  $@.part" | sha256sum -c -
 	mv $@.part $@
 
+# The fixed part of the knowledge graph. It is written again every time, so it always matches the
+# DBC and the table of default quantities.
+graph: build $(DBC)
+	$(BIN)/graph_builder --dbc $(DBC) $(if $(DEFAULTS),--defaults $(DEFAULTS)) --out $(GRAPH)
+
 # The receiver goes to the background and the sender keeps trying until it is listening.
 demo: build $(DBC)
 	@$(BIN)/signal_receiver --listen 127.0.0.1:$(PORT) --watch $(WATCH) & \
@@ -70,8 +92,17 @@ demo: build $(DBC)
 	sed -n '/^--- signal_sender/,$$p' .demo_sender.txt; \
 	rm -f .demo_sender.txt
 
-receive: build
-	$(BIN)/signal_receiver --listen 0.0.0.0:$(PORT) --watch $(WATCH) $(if $(SAVE),--save $(SAVE))
+# The same with sample/drive.log, 21 s of a drive whose signals agree with each other, and the
+# knowledge graph: the gateway shows what a language model would read for each question.
+demo-graph: build graph
+	@$(BIN)/signal_receiver --listen 127.0.0.1:$(PORT) --watch CLU11.CF_Clu_Vanz,ESP12.LONG_ACCEL,ESP12.CYL_PRES $(KNOWLEDGE) & \
+	$(BIN)/signal_sender --log sample/drive.log --dbc $(DBC) --to 127.0.0.1:$(PORT) 2> .demo_sender.txt; \
+	wait; \
+	sed -n '/^--- signal_sender/,$$p' .demo_sender.txt; \
+	rm -f .demo_sender.txt
+
+receive: build $(if $(GRAPH),graph)
+	$(BIN)/signal_receiver --listen 0.0.0.0:$(PORT) --watch $(WATCH) $(if $(SAVE),--save $(SAVE)) $(KNOWLEDGE)
 
 send: build $(DBC)
 	$(BIN)/signal_sender --log $(LOG) --dbc $(DBC) --to $(GATEWAY):$(PORT) --speed $(SPEED) $(if $(DURATION),--duration $(DURATION))
@@ -84,14 +115,15 @@ expected: build $(DBC)
 info:
 	@echo "$$(hostname): $$(git log -1 --format='commit %h, %s' 2> /dev/null || echo 'not a git clone')"
 	@test -x $(BIN)/signal_sender && echo "  programs: built" || echo "  programs: not built"
-	@test -f $(DBC) && echo "  DBC: here" || echo "  DBC: not here (only the vehicle needs it)"
+	@test -f $(DBC) && echo "  DBC: here" || echo "  DBC: not here (make dbc downloads it)"
+	@test -f "$(GRAPH)" && echo "  knowledge graph: $$(wc -l < $(GRAPH)) triples in $(GRAPH)" || echo "  knowledge graph: not written yet (make graph)"
 	@pgrep -x signal_receiver > /dev/null && echo "  signal_receiver: running" || echo "  signal_receiver: stopped"
 	@pgrep -x signal_sender > /dev/null && echo "  signal_sender: running" || echo "  signal_sender: stopped"
 	@ip -4 -br addr show 2> /dev/null | grep -v '^lo ' | sed 's/^/  address: /'
 
 clean:
 	cargo clean
-	rm -f expected.ndjson received.ndjson .demo_sender.txt .sender.txt
+	rm -f expected.ndjson received.ndjson .demo_sender.txt .sender.txt signal_graph.nt
 
 # ---------------------------------------------------------------------------------------------
 # From your computer: the two Pis, driven through ssh.
@@ -119,7 +151,8 @@ VEHICLE_PI := $(PI_USER)@$(VEHICLE_IP)
 # make on a Pi, inside the project. ssh does not put ~/.cargo/bin, where rustup leaves cargo, in PATH.
 PI_MAKE    := cd $(DIR) && PATH=$$HOME/.cargo/bin:$$PATH make --no-print-directory
 # The settings of a run, handed to make on each Pi.
-RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) PORT=$(PORT) WATCH=$(WATCH) SAVE=$(SAVE)
+RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) PORT=$(PORT) WATCH=$(WATCH) SAVE=$(SAVE) \
+              GRAPH=$(GRAPH) QUESTIONS=$(QUESTIONS) DEFAULTS=$(DEFAULTS) PROMPTS=$(PROMPTS) RDF=$(RDF) JELLY=$(JELLY)
 
 .PHONY: setup update menu run stop status data compare need-bench
 
@@ -153,6 +186,7 @@ menu: need-bench
 		echo "  4) stop both ends"; \
 		echo "  5) bring the latest code to the two Pis and build it"; \
 		echo "  6) list every command"; \
+		echo "  7) run the sample drive: the knowledge graph and what a model would read"; \
 		echo "  q) quit"; \
 		printf "choice: "; \
 		read choice || exit 0; \
@@ -163,6 +197,7 @@ menu: need-bench
 			4) $(MAKE) --no-print-directory stop ;; \
 			5) $(MAKE) --no-print-directory update ;; \
 			6) $(MAKE) --no-print-directory help ;; \
+			7) $(MAKE) --no-print-directory run LOG=sample/drive.log DURATION= ;; \
 			q) exit 0 ;; \
 			*) echo "not an option: $$choice" ;; \
 		esac; \

@@ -1,0 +1,8 @@
+GATEWAY_IP := 100.70.199.67
+VEHICLE_IP := 100.97.160.33
+PI_USER := ubuntu
+DIR := bench/jedge-stream
+GATEWAY := 10.77.0.1
+VEHICLE := 10.77.0.2
+IFACE := eth0
+SSH_OPTS := 

@@ -1,0 +1,142 @@
+signal	ecu	dbc_unit	dbc_min	dbc_max	resolution	kind	quantity	label	unit	already_in_graph	confidence	basis	note	checked_with_values
+AAF11.CF_Aaf_PStatus	AAF	%	0	100	1	measured	air_flap_position	position of the active air flap	%	no	medium	AAF read as active air flap; 0 to 100 %		
+WHL_PUL11.WHL_PUL_FL	ABS	pulse count	0	127.5	0.5	measured	wheel_pulses_fl	pulse count of the front left wheel speed sensor	pulses	no	high	name and unit are explicit; same layout as WHL_SPD11	a counter that wraps, not a level	
+WHL_PUL11.WHL_PUL_FR	ABS	pulse count	0	127.5	0.5	measured	wheel_pulses_fr	pulse count of the front right wheel speed sensor	pulses	no	high	name and unit are explicit; same layout as WHL_SPD11	a counter that wraps, not a level	
+WHL_PUL11.WHL_PUL_RL	ABS	pulse count	0	127.5	0.5	measured	wheel_pulses_rl	pulse count of the rear left wheel speed sensor	pulses	no	high	name and unit are explicit; same layout as WHL_SPD11	a counter that wraps, not a level	
+WHL_PUL11.WHL_PUL_RR	ABS	pulse count	0	127.5	0.5	measured	wheel_pulses_rr	pulse count of the rear right wheel speed sensor	pulses	no	high	name and unit are explicit; same layout as WHL_SPD11	a counter that wraps, not a level	
+CGW3.C_MirOutTempSns	BCM	deg	-40	60	0.5	measured	outside_temperature	outside air temperature	degC	no	medium	MirOutTempSns read as the outside temperature sensor in the mirror		
+CLU11.CF_Clu_ParityBit1	CLU	pulse count	0	1	1	none		parity bit of the cluster message		no	high	name says parity bit; range 0 to 1	the DBC unit 'pulse count' is misleading	
+CLU12.CF_Clu_Odometer	CLU	km	0	1677721.4	0.1	measured	odometer	total distance driven	km	no	high	name and unit are explicit; range up to 1.6 million km		
+DATC11.CF_Datc_IncarTemp	DATC	deg	-40	60	0.5	measured	cabin_temperature	air temperature inside the cabin	degC	no	high	name is explicit		
+DATC11.CR_Datc_OutTempC	DATC	deg	-41	86.5	0.5	measured	outside_temperature	outside air temperature	degC	no	high	name is explicit; the C is Celsius, next to an F twin		
+DATC11.CR_Datc_OutTempF	DATC	deg	-42	213	1	measured	outside_temperature_f	outside air temperature	degF	no	high	the F twin of OutTempC; range -42 to 213	Fahrenheit	
+DATC12.CR_Datc_DrTempDispC	DATC	deg	15	32	0.5	setting	cabin_set_temperature_driver	temperature set for the driver side	degC	no	medium	TempDisp read as the temperature shown on the climate display; 15 to 32		
+DATC12.CR_Datc_PsTempDispC	DATC	deg	15	32	0.5	setting	cabin_set_temperature_passenger	temperature set for the passenger side	degC	no	medium	TempDisp read as the temperature shown on the climate display; 15 to 32		
+DATC12.CR_Datc_RearDrTempDispC	DATC	deg	15	32	0.5	setting	cabin_set_temperature_rear	temperature set for the rear	degC	no	medium	TempDisp read as the temperature shown on the climate display; 15 to 32		
+FATC11.CR_Fatc_OutTemp	DATC	deg	-40	60	0.5	measured	outside_temperature	outside air temperature	degC	no	high	name is explicit; -40 to 60		
+FATC11.CR_Fatc_OutTempSns	DATC	deg	-40	60	0.5	measured	outside_temperature	outside air temperature	degC	no	medium	same as OutTemp with Sns: read as the raw sensor value		
+FATC11.CR_Fatc_TqAcnOut	DATC	Nm	0	50.8	0.2	measured	ac_compressor_torque	torque taken by the air conditioning compressor	Nm	no	medium	TqAcn read as torque of the air conditioning; sent by climate control		
+DI_BOX12.CR_DiBox_BatVol	DI_BOX	V	0	25.5	0.1	measured	battery_voltage_di_box	battery voltage seen by the DI box	V	no	medium	BatVol; what the DI box is cannot be told from the DBC		
+ECS12.Height_FL	ECS	mm	-128	127	1	measured	ride_height_fl	ride height at the front left wheel	mm	no	high	name is explicit; sent by the suspension ECU		
+ECS12.Height_FR	ECS	mm	-128	127	1	measured	ride_height_fr	ride height at the front right wheel	mm	no	high	name is explicit; sent by the suspension ECU		
+ECS12.Height_RL	ECS	mm	-128	127	1	measured	ride_height_rl	ride height at the rear left wheel	mm	no	high	name is explicit; sent by the suspension ECU		
+ECS12.Height_RR	ECS	mm	-128	127	1	measured	ride_height_rr	ride height at the rear right wheel	mm	no	high	name is explicit; sent by the suspension ECU		
+BAT11.BAT_SNSR_I	EMS	A	-327	328	0.01	measured	battery_current	battery current	A	no	high	name and unit are explicit		
+BAT11.BAT_SNSR_Temp	EMS	deg	-40	125	0.5	measured	battery_temperature	battery temperature	degC	no	high	name is explicit		
+BAT11.BAT_SNSR_V	EMS	V	6	18	0.001	measured	battery_voltage	battery voltage	V	no	high	name and unit are explicit; 6 to 18 V		
+BAT11.BAT_SOC	EMS	%	0	100	1	measured	battery_charge	state of charge of the battery	%	no	high	SOC		
+BAT11.BAT_SOF	EMS	V	0	12	0.1	measured	battery_function_voltage	state of function of the battery, as a voltage	V	no	medium	SOF; unit V		
+BAT11.BAT_SOH	EMS	%	0	100	1	measured	battery_health	state of health of the battery	%	no	high	SOH		
+EMS11.TQFR	EMS	%	0	99.6094	0.390625	measured	engine_friction_torque	friction torque of the engine	%	no	medium	TQFR read as torque, friction; same scale as TQI		
+EMS11.TQI_ACOR	EMS	%	0	99.6094	0.390625	measured	engine_torque_corrected	indicated engine torque after corrections	%	no	low	TQI is indicated torque; ACOR is not clear		
+EMS11.VS	EMS	km/h	0	254	1	measured	vehicle_speed	vehicle speed	km/h	yes	high	VS with unit km/h; sent by the engine ECU	1 km/h steps	
+EMS12.ENG_VOL	EMS	liter	0	25.5	0.1	constant	engine_displacement	engine displacement	l	no	high	ENG_VOL; unit litre		
+EMS12.TEMP_ENG	EMS	deg	-48	143.25	0.75	measured	coolant_temperature	engine coolant temperature	degC	no	medium	engine temperature; taken as the coolant, the usual meaning		
+EMS12.TQ_STND	EMS	Nm	0	630	10	constant	engine_torque_reference	engine torque that 100 % stands for	Nm	no	medium	TQ_STND read as standard torque; 10 Nm steps up to 630		
+EMS13.AMP	EMS	hPa	0	5411.1	21.22	measured	ambient_pressure	ambient air pressure	hPa	no	medium	AMP read as ambient pressure; the declared range, up to 5411 hPa, is wider than any real value		
+EMS13.MAF	EMS	mg/TDC	0	1388.985	5.447	measured	air_mass_per_stroke	air mass taken in per stroke	mg/stroke	no	medium	MAF; unit mg/TDC		
+EMS13.MAP	EMS	kPa	0	119.9979	0.47058	measured	manifold_pressure	absolute pressure in the intake manifold	kPa	no	high	MAP; 0 to 120 kPa		
+EMS13.N_32	EMS	rpm	0	8160	32	measured	engine_speed	engine speed	rpm	yes	medium	N is engine speed in EMS11; 32 is its resolution in rpm	coarse copy	
+EMS13.TCO	EMS	deg	-48	143.25	0.75	measured	coolant_temperature	engine coolant temperature	degC	no	medium	TCO read as temperature of the coolant; engine temperature range		
+EMS13.TIA	EMS	deg	-48	143.25	0.75	measured	intake_air_temperature	intake air temperature	degC	no	medium	TIA read as temperature of the intake air; engine temperature range		
+EMS14.AMP_CAN	EMS	mmHg	458.98	791.660003	10.731613	measured	ambient_pressure_mmhg	ambient air pressure	mmHg	no	high	the range, 459 to 792 mmHg, is that of barometric pressure		
+EMS14.BAT_Alt_FR_Duty	EMS	%	0	100	0.4	measured	alternator_field_duty	duty cycle of the alternator field	%	no	medium	Alt_FR_Duty: FR is the field monitor terminal of an alternator		
+EMS14.EMS_VS	EMS	km/h	0	255.875	0.0625	measured	vehicle_speed	vehicle speed	km/h	yes	high	VS with unit km/h; finer scale than EMS11.VS		
+EMS14.TEMP_FUEL	EMS	deg	-48	143.25	0.75	measured	fuel_temperature	fuel temperature	degC	no	high	name is explicit		
+EMS14.VB	EMS	V	0	25.8984375	0.1015625	measured	battery_voltage	battery voltage	V	no	medium	VB read as battery voltage; 0 to 25.9 V		
+EMS15.FA_PV_CAN	EMS	%	0	99.2	0.3906	measured	accelerator_pedal_fa	accelerator pedal position, FA value	%	no	low	PV_AV_CAN is the pedal elsewhere; what FA adds is unknown		
+EMS15.IntAirTemp	EMS	deg	-48	143.25	0.75	measured	intake_air_temperature	intake air temperature	degC	no	high	name is explicit		
+EMS16.SOAK_TIME	EMS	Min	0	255	1	measured	engine_soak_time	time since the engine was switched off	min	no	medium	soak time is the usual name for it; unit minutes		
+EMS16.TQI	EMS	%	0	99.609375	0.390625	measured	engine_torque	indicated engine torque	%	yes	high	same name and scale as EMS11.TQI		
+EMS16.TQI_MAX	EMS	%	0	99.609375	0.390625	measured	engine_torque_max	highest indicated engine torque available	%	no	medium	TQI with MAX		
+EMS16.TQI_MIN	EMS	%	0	99.609375	0.390625	measured	engine_torque_min	lowest indicated engine torque available	%	no	medium	TQI with MIN		
+EMS16.TQI_TARGET	EMS	%	0	99.609375	0.390625	request	engine_torque_target	target indicated engine torque	%	no	medium	TQI with TARGET		
+EMS17.CR_Ems_BatVolRly	EMS	V	0	25.5	0.1	measured	battery_voltage_after_relay	battery voltage after the main relay	V	no	medium	BatVolRly; 0 to 25.5 V		
+EMS17.CR_Ems_DutyCycMSV	EMS	%	0	100	0.3921568627	request	fuel_metering_valve_duty	duty cycle of the fuel metering valve	%	no	low	MSV read as the metering valve of the high-pressure fuel pump		
+EMS18.CR_Ems_DutyCyc1MSV	EMS	%	0	49.8	0.1953	request	fuel_metering_valve_duty_1	duty cycle 1 of the fuel metering valve	%	no	low	MSV read as the metering valve of the high-pressure fuel pump		
+EMS18.CR_Ems_DutyCyc2MSV	EMS	%	0	35	0.13725	request	fuel_metering_valve_duty_2	duty cycle 2 of the fuel metering valve	%	no	low	MSV read as the metering valve of the high-pressure fuel pump		
+EMS18.CR_Ems_DutyCyc3MSV	EMS	%	0	100	0.392	request	fuel_metering_valve_duty_3	duty cycle 3 of the fuel metering valve	%	no	low	MSV read as the metering valve of the high-pressure fuel pump		
+EMS19.CF_Ems_DecelReq	EMS	m/s^2	-4.094	0	0.001	request	deceleration_request_engine	deceleration requested by the engine ECU	m/s^2	no	medium	DecelReq; range is only negative		
+EMS19.CF_Ems_ModeledAmbTemp	EMS	deg	-41	85.5	0.5	measured	ambient_temperature_modelled	outside air temperature as modelled by the engine ECU	degC	no	high	name is explicit		
+EMS19.CR_Ems_BstPre	EMS	hPa	0	4094	1.322	measured	boost_pressure	boost pressure	hPa	no	high	BstPre; unit hPa; range up to 4 bar		
+EMS19.CR_Ems_EngOilTemp	EMS	deg	0	254	0.75	measured	engine_oil_temperature	engine oil temperature	degC	no	high	name is explicit; 'deg' with a range of 0 to 254 is a temperature		
+EMS20.CF_Ems_PumpTPres	EMS	kPa	0	800	3.137254902	request	fuel_pump_target_pressure	target pressure of the fuel pump	kPa	no	medium	PumpTPres; same scale as FPCM11.CR_Fpcm_LPActPre		
+EMS20.FCO	EMS	ul	0	8388.48	0.128	measured	fuel_consumed	fuel consumed, as a running count	ul	no	medium	FCO read as fuel consumption; unit microlitres	a counter that wraps, not a level	
+EMS21.SCR_REMAINING_DISTANCE	EMS	km	0	25000	1	measured	urea_remaining_distance	distance that can still be driven with the urea left	km	no	high	name and unit are explicit		
+EMS21.SCR_UREA_LEVEL	EMS	%	0	100	0.5	measured	urea_level	level of the urea tank	%	no	high	SCR is the urea exhaust treatment; name and unit are explicit		
+EMS_DCT11.N	EMS	rpm	0	16383.75	0.25	measured	engine_speed	engine speed	rpm	yes	high	same name and scale as EMS11.N		
+EMS_DCT11.PV_AV_CAN	EMS	%	0	99.603	0.3906	measured	accelerator_pedal	position of the accelerator pedal	%	yes	high	same name and scale as EMS12.PV_AV_CAN		
+EMS_DCT11.TQFR	EMS	%	0	99.6094	0.390625	measured	engine_friction_torque	friction torque of the engine	%	no	medium	TQFR read as torque, friction; same scale as TQI		
+EMS_DCT11.TQI	EMS	%	0	99.609375	0.390625	measured	engine_torque	indicated engine torque	%	yes	high	same name and scale as EMS11.TQI		
+EMS_DCT11.TQI_ACOR	EMS	%	0	99.6094	0.390625	measured	engine_torque_corrected	indicated engine torque after corrections	%	no	low	TQI is indicated torque; ACOR is not clear		
+EMS_DCT11.TQ_STND	EMS	Nm	0	630	10	constant	engine_torque_reference	engine torque that 100 % stands for	Nm	no	medium	TQ_STND read as standard torque; 10 Nm steps up to 630		
+EMS_DCT12.CR_Ems_IndAirTemp	EMS	deg	-48	143.25	0.75	measured	intake_air_temperature	intake air temperature	degC	no	medium	IndAirTemp read as inducted air temperature; engine temperature range		
+EMS_DCT12.CR_Ems_SoakTimeExt	EMS	Min	0	315	5	measured	engine_soak_time	time since the engine was switched off	min	no	medium	soak time is the usual name for it; unit minutes		
+EMS_H12.R_NEngIdlTgC	EMS	rpm	0	2550	10	request	idle_speed_target	target idle speed of the engine	rpm	no	medium	N Eng Idl Tg read as engine speed, idle, target		
+EMS_H12.R_PAcnC	EMS	hPa	0	31875	125	measured	ac_refrigerant_pressure	pressure of the air conditioning refrigerant	hPa	no	medium	PAcn read as pressure of the air conditioning; unit hPa		
+EMS_H12.R_TqAcnApvC	EMS	Nm	0	51	0.2	request	ac_compressor_torque_allowed	torque allowed for the air conditioning compressor	Nm	no	low	TqAcn read as torque of the air conditioning; Apv read as approved		
+EMS_H12.SLD_VS	EMS	km/h	0	255	1	setting	speed_limiter_set_speed	speed set on the speed limiter	km/h	no	medium	SLD is the speed limiter elsewhere in this DBC (CF_Clu_SldMainSW); VS is vehicle speed		
+EMS_H12.TQI_B	EMS	%	0	99.609375	0.390625	measured	engine_torque_b	indicated engine torque, variant B	%	no	low	TQI is indicated torque; what B means is unknown		
+EngFrzFrm11.PID_04h	EMS	%	0	100	0.3921568627	snapshot	freeze_engine_load	calculated engine load in the freeze frame	%	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm11.PID_05h	EMS	deg	-40	215	1	snapshot	freeze_coolant_temperature	engine coolant temperature in the freeze frame	degC	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm11.PID_0Ch	EMS	rpm	0	16383.75	0.25	snapshot	freeze_engine_speed	engine speed in the freeze frame	rpm	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm11.PID_0Dh	EMS	km/h	0	255	1	snapshot	freeze_vehicle_speed	vehicle speed in the freeze frame	km/h	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm11.PID_11h	EMS	%	0	100	0.3921568627	snapshot	freeze_throttle	throttle position in the freeze frame	%	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm12.PID_06h	EMS	%	-100	99.22	0.78125	snapshot	freeze_fuel_trim_short_bank1	short-term fuel trim of bank 1 in the freeze frame	%	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm12.PID_07h	EMS	%	-100	99.22	0.78125	snapshot	freeze_fuel_trim_long_bank1	long-term fuel trim of bank 1 in the freeze frame	%	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm12.PID_08h	EMS	%	-100	99.22	0.78125	snapshot	freeze_fuel_trim_short_bank2	short-term fuel trim of bank 2 in the freeze frame	%	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm12.PID_09h	EMS	%	-100	99.22	0.78125	snapshot	freeze_fuel_trim_long_bank2	long-term fuel trim of bank 2 in the freeze frame	%	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm12.PID_0Bh	EMS	kPa	0	255	1	snapshot	freeze_manifold_pressure	intake manifold pressure in the freeze frame	kPa	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EngFrzFrm12.PID_23h	EMS	kPa	0	655350	10	snapshot	freeze_fuel_rail_pressure	fuel rail pressure in the freeze frame	kPa	no	high	the number is an OBD-II PID and unit, range and scale match that PID	stored when a fault code was set: a snapshot, not a live value	
+EPB11.EPB_DBF_DECEL	EPB	g	0	2.54	0.01	request	deceleration_request_parking_brake	deceleration requested by the electric parking brake	g	no	medium	EPB sender; DECEL; unit g; DBF read as dynamic braking function		
+ESP11._4WD_CLU_LIM	ESC	%	0	99.609375	0.390625	request	awd_clutch_limit	limit on the all-wheel-drive clutch	%	no	low	CLU_LIM read as clutch limit; what the percentage is of is unknown		
+ESP11._4WD_TQC_LIM	ESC	Nm	0	65535	1	request	awd_torque_limit	limit on the all-wheel-drive coupling torque	Nm	no	medium	TQC_LIM read as torque of the coupling, limit		
+TCS11.TQI_MSR	ESC	%	0	99.609375	0.390625	request	engine_torque_request_drag	engine torque requested by engine drag control	%	no	medium	TQI with MSR, the usual short name of engine drag torque control		
+TCS11.TQI_SLW_TCS	ESC	%	0	99.609375	0.390625	request	engine_torque_request_tcs_slow	slow engine torque request of traction control	%	no	low	TQI with SLW and TCS		
+TCS11.TQI_TCS	ESC	%	0	99.609375	0.390625	request	engine_torque_request_tcs	engine torque requested by traction control	%	no	medium	TQI with TCS; sent by the ESC		
+TCS13.ACCEL_REF_ACC	ESC	m/s^2	-10.23	10.24	0.01	request	acceleration_reference_acc	reference acceleration for adaptive cruise control	m/s^2	no	medium	name reads acceleration reference for ACC		
+TCS13.TQI_ACC	ESC	%	0	99.609375	0.390625	request	engine_torque_request_acc	engine torque requested for adaptive cruise control	%	no	medium	TQI is indicated torque in this DBC; ACC suffix		
+TCS13.aBasis	ESC	m/s^2	-10.23	10.24	0.01	measured	base_acceleration	base longitudinal acceleration used by the stability control	m/s^2	no	low	unit and range match ESP12.LONG_ACCEL; which acceleration it is cannot be told from the name		
+VSM11.CR_Esc_StrTqReq	ESC	Nm	-20.48	20.47	0.01	request	steering_torque_request_esc	steering torque requested by the stability control	Nm	no	medium	StrTqReq; sent by the ESC		
+FPCM11.CR_Fpcm_LPActPre	FPCM	kPa	0	800	3.137254902	measured	fuel_low_pressure	pressure in the low-pressure fuel circuit	kPa	no	medium	LPActPre read as low pressure, actual; sent by the fuel pump module		
+LKAS11.CR_Lkas_StrToqReq	LDWS_LKAS	Nm	-8	8	0.0078125	request	steering_torque_request_lkas	steering torque requested by lane keeping assist	Nm	no	high	name is explicit; sent by the lane keeping unit		
+LPI11.BFS_CYL	LPI	Cyl Nr.	0	6	1	none		cylinder number reported by the LPG system		no	low	unit is 'Cyl Nr.': an index, not a physical quantity		
+LPI11.FTL_AFU	LPI	%	0	99.96	0.392	measured	lpg_tank_level	level of the LPG tank	%	no	low	FTL read as fuel tank level and AFU as alternative fuel		
+LPI11.FUP_LPG_MMV	LPI	hPa	0	32640	128	measured	lpg_fuel_pressure	LPG fuel pressure	hPa	no	medium	FUP read as fuel pressure; LPG; unit hPa		
+MDPS11.CF_Mdps_LKAS_FUNC	MDPS	flag	0	1	1	none		lane keeping function flag of the power steering		no	high	DBC unit is 'flag'		
+MDPS11.CF_Mdps_SPAS_FUNC	MDPS	flag	0	1	1	none		parking assist function flag of the power steering		no	high	DBC unit is 'flag'		
+MDPS11.CR_Mdps_StrAng	MDPS	Deg	-3276.8	3276.7	0.1	measured	steering_wheel_angle	steering wheel angle	deg	yes	high	StrAng; 'Deg' with a range of +-3276.7 is an angle, same scale as SAS11.SAS_Angle		
+MDPS12.CR_Mdps_StrTq	MDPS	Nm	-20.48	20.47	0.01	measured	steering_torque	steering torque reported by the power steering	Nm	no	low	StrTq; how it differs from CR_Mdps_StrColTq is unknown		
+OPI11.CF_Opi_PWM_Rate	OPI	%	0	100	1	request	oil_pump_duty	duty cycle of the electric oil pump	%	no	medium	OPI read as oil pump inverter; PWM rate		
+OPI11.CR_Opi_Spd_Rpm	OPI	rpm	0	3500	20	measured	oil_pump_speed	speed of the electric oil pump	rpm	no	medium	OPI read as oil pump inverter; Spd_Rpm		
+REA11.CR_EndBst_HbriPwr	REA	%	0	99.99	0.045	request	boost_actuator_power	drive power of the boost pressure actuator	%	no	low	EndBst and Hbri read as boost actuator and H-bridge		
+SCC11.ACC_ObjLatPos	SCC	m	-20	31.1	0.1	measured	lead_vehicle_lateral_position	lateral position of the vehicle ahead	m	no	high	next to ACC_ObjDist and ACC_ObjRelSpd; unit m		
+SCC11.VSetDis	SCC	km/h or MPH	0	255	1	setting	cruise_set_speed	speed set on the cruise control	km/h	no	medium	VSetDis read as set speed shown on the display	the DBC says 'km/h or MPH': it follows the unit of the cluster	
+SCC12.CR_VSM_DecCmd	SCC	g	0	2.55	0.01	request	deceleration_command	deceleration commanded by the driver assistance	g	no	medium	DecCmd; unit g; sent by the cruise control radar		
+SCC12.aReqMax	SCC	m/s^2	-10.23	10.24	0.01	request	acceleration_request_max	upper acceleration requested by adaptive cruise control	m/s^2	no	medium	aReq with Max; same scale as the acceleration signals		
+SCC12.aReqMin	SCC	m/s^2	-10.23	10.24	0.01	request	acceleration_request_min	lower acceleration requested by adaptive cruise control	m/s^2	no	medium	aReq with Min; same scale as the acceleration signals		
+TCU11.N_TC	TCU	rpm	0	16383.5	0.25	measured	turbine_speed	speed of the torque converter turbine	rpm	no	medium	N_TC read as speed of the torque converter		
+TCU11.TEMP_AT	TCU	deg	-40	214	1	measured	transmission_temperature	temperature of the automatic transmission fluid	degC	no	high	TEMP_AT; -40 to 214		
+TCU11.TQI_TCU	TCU	%	0	99.609375	0.390625	request	engine_torque_request_tcu	engine torque asked for by the transmission	%	no	medium	TQI with TCU		
+TCU11.TQI_TCU_INC	TCU	%	0	99.609375	0.390625	request	engine_torque_increase_tcu	engine torque increase asked for by the transmission	%	no	medium	TQI with TCU and INC		
+TCU12.ETL_TCU	TCU	Nm	0	508	2	request	engine_torque_limit_tcu	engine torque limit asked for by the transmission	Nm	no	medium	ETL read as engine torque limit		
+TCU12.N_TC_RAW	TCU	rpm	0	16383.5	0.25	measured	turbine_speed_raw	speed of the torque converter turbine, unfiltered	rpm	no	medium	N_TC read as speed of the torque converter; RAW		
+TCU12.VS_TCU	TCU	km/h	0	254	1	measured	vehicle_speed	vehicle speed	km/h	yes	high	VS with unit km/h; sent by the transmission	1 km/h steps; its decimals travel in VS_TCU_DECIMAL	
+TCU12.VS_TCU_DECIMAL	TCU	km/h	0	0.9921875	0.0078125	measured	vehicle_speed_decimals	decimal part of the vehicle speed of the transmission	km/h	no	high	range 0 to 0.99 next to VS_TCU		
+TCU13.CF_Tcu_TqGrdLim	TCU	Nm/s	0	2540	10	request	torque_gradient_limit	limit on how fast the engine torque may change	Nm/s	no	medium	TqGrdLim; unit Nm/s		
+TCU13.CR_Tcu_IsgTgtRPM	TCU	rpm	0	3500	20	request	restart_target_speed	target engine speed for the stop-start system	rpm	no	medium	IsgTgtRPM: ISG is the stop-start system of this maker		
+TCU13.N_TGT_LUP	TCU	rpm	500	3040	10	request	lockup_target_speed	target engine speed for the converter lock-up	rpm	no	medium	N_TGT_LUP read as speed, target, lock-up		
+TCU13.SLOPE_TCU	TCU	%	-16	15.5	0.5	measured	road_slope	slope of the road as estimated by the transmission	%	no	medium	SLOPE; -16 to 15.5 %		
+TCU_DCT13.Clutch_Driving_Tq	TCU	Nm	0	0	1	measured	clutch_torque	torque carried by the driving clutch	Nm	no	medium	name is explicit	the DBC declares no range	
+_4WD11.CLU_DUTY	_4WD	%	0	64	1	request	awd_clutch_duty	duty cycle of the all-wheel-drive clutch	%	no	medium	CLU_DUTY		
+_4WD11.R_TIRE	_4WD	mm	200	455	1	constant	tyre_radius	tyre radius	mm	no	high	R_TIRE; 200 to 455 mm		
+_4WD11._4WD_TQC_CUR	_4WD	Nm	0	65535	1	measured	awd_torque	torque carried by the all-wheel-drive coupling	Nm	no	medium	TQC_CUR read as torque of the coupling, current		
+_4WD12.CLU_PRES	_4WD	Bar	-50	50	0.0625	measured	awd_clutch_pressure	pressure of the all-wheel-drive clutch	bar	no	medium	CLU_PRES; unit bar		
+_4WD12.FLSS	_4WD	km/h	0	254	1	measured	wheel_speed_fl	speed of the front left wheel	km/h	yes	medium	FL/FR/RL/RR plus SS read as wheel speed sensor; unit km/h	coarser copy (1 km/h) used by the 4WD unit	
+_4WD12.FRSS	_4WD	km/h	0	254	1	measured	wheel_speed_fr	speed of the front right wheel	km/h	yes	medium	FL/FR/RL/RR plus SS read as wheel speed sensor; unit km/h	coarser copy (1 km/h) used by the 4WD unit	
+_4WD12.RLSS	_4WD	km/h	0	254	1	measured	wheel_speed_rl	speed of the rear left wheel	km/h	yes	medium	FL/FR/RL/RR plus SS read as wheel speed sensor; unit km/h	coarser copy (1 km/h) used by the 4WD unit	
+_4WD12.RRSS	_4WD	km/h	0	254	1	measured	wheel_speed_rr	speed of the rear right wheel	km/h	yes	medium	FL/FR/RL/RR plus SS read as wheel speed sensor; unit km/h	coarser copy (1 km/h) used by the 4WD unit	
+_4WD12.Ster_Pos	_4WD	Deg	-600	600	1	measured	steering_wheel_angle	steering wheel angle	deg	yes	medium	Ster_Pos; +-600 degrees is an angle	coarse copy (1 degree) used by the 4WD unit	
+_4WD13._4WD_CLU_THERM_STR	_4WD	%	0	100	1	measured	awd_clutch_thermal_load	thermal load of the all-wheel-drive clutch	%	no	medium	CLU_THERM_STR read as clutch thermal stress		
+_4WD13._4WD_CURRENT	_4WD	A	-50	50	0.390625	measured	awd_actuator_current	current of the all-wheel-drive actuator	A	no	medium	name and unit are explicit		
+_4WD13._4WD_POSITION	_4WD	Deg	-180	180	0.015625	measured	awd_actuator_position	position of the all-wheel-drive actuator	deg	no	medium	name; +-180 degrees is an angle		

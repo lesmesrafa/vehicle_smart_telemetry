@@ -5,7 +5,7 @@ which the car produced it.
 
 ```
 vehicle Pi (16 GB)                                       gateway Pi (1 GB)
-recording.log --> signal_sender ------ Ethernet ------> signal_receiver --> (knowledge graph, later)
+recording.log --> signal_sender ------ Ethernet ------> signal_receiver --> knowledge graph --> text for a model
                   decodes with the DBC   TCP, port 7700   keeps the latest value of every signal
                   waits for each frame's moment
 ```
@@ -32,7 +32,7 @@ does all of it from your computer; section 3 is the same by hand.
 
 ```bash
 make build
-make test      # test result: ok. 8 passed
+make test      # test result: ok. 25 passed
 make demo      # needs internet once, to download the DBC
 ```
 
@@ -188,9 +188,10 @@ One line per CAN message, in JSON:
 
 ## Where the knowledge graph goes
 
-In `src/bin/signal_receiver.rs`, the function `State::accept` receives every message as a `Sample`
-(time, identifier, message name and the list of signals with their values). Today it stores the
-latest value of each signal. That is the place from which the graph will be fed.
+In `src/bin/signal_receiver.rs`, every message arrives as a `Sample` (time, identifier, message name
+and the list of signals with their values). `Knowledge::accept` puts it into the knowledge graph and
+`State::accept` keeps the counters of the receiver. The graph is described in "The knowledge graph"
+below.
 
 A program in another language can also read the stream directly: it is plain text over TCP, and
 any JSON library reads the lines.
@@ -228,6 +229,77 @@ Each program lists its options with `--help`.
 | `sample/sample.log` | 10 s of synthetic traffic for `make demo` |
 | `scripts/setup_pi.sh` | prepares one Pi; `make setup` and `make update` send it through ssh |
 | `bench.mk` | the addresses of your bench, written by `make setup`; git ignores it |
+
+## The knowledge graph
+
+On the gateway, the signals go into a streaming knowledge graph, and each registered question gets
+the part of that graph it needs, window after window.
+
+```
+signal_graph.nt  fixed part: what every signal is     loaded once, as numbers
+live slots       one per signal, a ring of buckets    written on every value, nothing is allocated
+questions.tsv    quantities, window, slide            each window: text for a model, RDF if asked
+```
+
+- **Fixed part.** `make graph` runs `graph_builder`, which reads the DBC and writes
+  `signal_graph.nt` (N-Triples): 8852 triples for 1154 signals, their 113 messages and 45 ECUs,
+  plus 132 quantities and 6 equations that the DBC does not know. Signals observe quantities
+  (`sosa:observes`), so a question can name quantities and not the signals of one car.
+- **Default quantities.** `graph_builder` itself names the signal of 20 quantities. For 141 more
+  signals, `default_quantities.tsv` says what each one is taken to carry. That was read from the
+  name, unit and range of the signal and has not been checked against values. 137 of them get a
+  quantity (112 of those quantities are new) through `jedge:observesByDefault`, a sub-property
+  of `sosa:observes`, with a `jedge:confidence` of high, medium or low. The other 4 are flags
+  and indexes, and only get a label. `yes` in the column `checked_with_values` of a row turns
+  it into a plain `sosa:observes`. `make graph DEFAULTS=` leaves the table out.
+- **Live part.** Every signal node has a slot with a ring of buckets, one per second. A bucket keeps
+  count, first, last, minimum, maximum and sum, and buckets can be merged, so a window is answered
+  without storing samples. No triple is created when a value arrives.
+- **Questions.** One per line in `questions.tsv`. A quantity brings the signals known to observe
+  it and, only when there are none, those that observe it by default. `MESSAGE.SIGNAL` in its
+  place asks for one signal, any of the 1154. The graph also gives the equations among their
+  quantities. That subgraph is written once as text (the prefix), where a signal read by default
+  is marked `assumed`; each window adds a few lines with what the signals did.
+
+```bash
+make demo-graph     # 21 s of sample/drive.log: shows what a model would read for each question
+make receive PROMPTS=prompts.ndjson RDF=windows.nt JELLY=windows.jelly
+make receive GRAPH=                                    # the receiver without the graph
+```
+
+| File | What goes into it |
+|---|---|
+| `PROMPTS` | one line of JSON per prefix (once) and per window: the text a language model reads |
+| `RDF` | every window as SOSA observations, in N-Triples |
+| `JELLY` | the same triples in [Jelly](https://w3id.org/jelly) 1.0, one frame per window |
+
+`scripts/check_rdf.py windows.nt windows.jelly` reads both files with rdflib and pyjelly and checks
+that they hold the same graph (it needs `pip install rdflib pyjelly`).
+
+| File | What it is |
+|---|---|
+| `src/ntriples.rs` | reading and writing N-Triples terms and lines |
+| `src/vocab.rs` | every IRI the programs name |
+| `src/defaults.rs` | reading the table of default quantities |
+| `src/graph.rs` | the fixed part: a sorted dictionary of terms and three sorted indexes |
+| `src/live.rs` | the live part: slots, buckets and window summaries |
+| `src/question.rs` | registering a question; a window as text and as triples |
+| `src/jelly.rs` | a Jelly writer |
+| `src/bin/graph_builder.rs` | from the DBC and the table of default quantities to `signal_graph.nt` |
+| `default_quantities.tsv` | what each of 141 signals is taken to carry, with how sure that is and why |
+| `questions.tsv` | the questions registered on the gateway |
+| `sample/drive.log` | 21 s of a made-up drive whose signals agree with each other |
+| `scripts/make_drive.py` | how that sample was made |
+
+Measured on 2026-11-25 on Linux x86-64 (two cores), both ends on one machine, 60 s in real time at
+2186 messages and 19900 values per second: the receiver alone used 1.89 s of CPU and 2.5 MB; with
+the graph and four questions, 2.21 s and 5.0 MB. With the default quantities in the graph and six
+questions, in a later run of the same day, 2.35 s and 5.2 MB. Nothing of this has been measured
+on a Raspberry Pi.
+
+Also run that day: one question for each of the 141 signals of the table, by name, and one for each
+of the 132 quantities. All 273 were registered, and the four questions that existed before the table
+gave the same bytes with it as without it.
 
 ## What has been run and what has not
 

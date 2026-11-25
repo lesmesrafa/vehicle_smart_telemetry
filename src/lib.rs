@@ -6,6 +6,14 @@ pub mod metrics;
 pub mod options;
 pub mod wire;
 pub mod timing;
+pub mod ntriples;
+pub mod vocab;
+pub mod defaults;
+pub mod graph;
+pub mod live;
+pub mod question;
+pub mod jelly;
+pub mod model;
 
 use std::io;
 
