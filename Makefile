@@ -30,6 +30,8 @@ JOBS        ?= 4
 # The memory, in MB, below which this machine does not try to build llama.cpp.
 BUILD_MIN_MB ?= 3000
 MODEL_PORT  ?= 8080
+# The seconds to wait for the model to load when it is started behind, by make model-up.
+MODEL_WAIT  ?= 120
 SLOTS       ?= 6
 SLOT_TOKENS ?= 1024
 THREADS     ?= 4
@@ -60,10 +62,22 @@ DBC_SHA256 := d7f822e3a8d220cfde83aec2ae4ed28ddbc44a38ff29bea2e12e3e321d73a607
 DBC_URL    := https://raw.githubusercontent.com/commaai/opendbc/$(DBC_COMMIT)/opendbc/dbc/hyundai_2015_ccan.dbc
 
 .DEFAULT_GOAL := help
-.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights model ask info clean
+.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights model model-up live ask info clean
 
 # What the receiver is told about the knowledge graph.
 KNOWLEDGE = $(if $(GRAPH),--graph $(GRAPH) --questions $(QUESTIONS) $(if $(PROMPTS),--prompts $(PROMPTS)) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)))
+
+# What the model needs before it starts, if it is the program and the weights this Makefile knows
+# how to get; with another LLAMA or MODEL, they are yours to bring.
+MODEL_NEEDS = $(filter $(LLAMA_BUILT),$(LLAMA)) $(filter $(MODEL_FILE),$(MODEL))
+# How the model is started. Each question gets a slot, where the server keeps the state of the
+# model after the prefix; the context is shared out evenly among the slots. The cache of old
+# prompts in memory is off: on the gateway the memory is for the model.
+MODEL_SERVER = $(LLAMA) -m $(MODEL) --host 127.0.0.1 --port $(MODEL_PORT) --parallel $(SLOTS) \
+	--ctx-size $$(( $(SLOTS) * $(SLOT_TOKENS) )) --threads $(THREADS) --cache-ram 0 --no-webui
+MODEL_HEALTH = curl -sf -o /dev/null http://127.0.0.1:$(MODEL_PORT)/health
+# Where the receiver writes what the model reads when make live runs both.
+LIVE_PROMPTS = $(if $(PROMPTS),$(PROMPTS),prompts.ndjson)
 
 help:
 	@echo "both       make build      compile the two programs"
@@ -77,6 +91,7 @@ help:
 	@echo "gateway    make weights    download the weights of the model and check their sha256"
 	@echo "gateway    make model      start the language model (llama-server) and leave it listening"
 	@echo "gateway    make ask        ask the model every window of PROMPTS and show what each answer cost"
+	@echo "gateway    make live       model, receiver and questions at once: answers each window as the vehicle sends"
 	@echo "vehicle    make send       decode LOG and send it to the gateway in real time"
 	@echo "vehicle    make expected   write expected.ndjson: what the gateway must receive"
 	@echo "vehicle    make dbc        download the DBC and check its sha256"
@@ -84,7 +99,8 @@ help:
 	@echo "computer   make setup GATEWAY_IP=... VEHICLE_IP=...   prepare the two Pis, then the menu"
 	@echo "computer   make menu       choose what to do with the two Pis"
 	@echo "computer   make run        start both ends and show what the gateway receives"
-	@echo "computer   make stop       stop both ends"
+	@echo "computer   make run-model  the same with the language model: each answer live, and what the run cost"
+	@echo "computer   make stop       stop both ends, and the language model"
 	@echo "computer   make status     what each Pi has, and whether the vehicle reaches the gateway"
 	@echo "computer   make update     bring the latest code to the two Pis and build it"
 	@echo "computer   make model-setup  build llama-server on the vehicle, copy it to the gateway, download the weights there"
@@ -181,14 +197,40 @@ $(MODEL_FILE):
 	@echo "$(MODEL_SHA256)  $@.part" | sha256sum -c - || { rm -f $@.part; exit 1; }
 	@mv $@.part $@
 
-# The language model, in its own process. Each question gets a slot, where the server keeps the
-# state of the model after the prefix; the context is shared out evenly among the slots. The
-# cache of old prompts in memory is off: on the gateway the memory is for the model.
-# The program and the weights are fetched first if they are the ones this Makefile knows and
-# are not here; with another LLAMA or MODEL, they are yours to bring.
-model: $(filter $(LLAMA_BUILT),$(LLAMA)) $(filter $(MODEL_FILE),$(MODEL))
-	$(LLAMA) -m $(MODEL) --host 127.0.0.1 --port $(MODEL_PORT) --parallel $(SLOTS) \
-		--ctx-size $$(( $(SLOTS) * $(SLOT_TOKENS) )) --threads $(THREADS) --cache-ram 0 --no-webui
+# The language model, in its own process and in front: it shows what it does until Ctrl+C.
+model: $(MODEL_NEEDS)
+	$(MODEL_SERVER)
+
+# The same behind: it starts unless it already answers, and this waits until it has loaded.
+# What the model says goes to model.log.
+model-up: $(MODEL_NEEDS)
+	@$(MODEL_HEALTH) && { echo "the model was already running"; exit 0; }; \
+	echo "starting the model: $(MODEL)"; start=$$(date +%s); \
+	($(MODEL_SERVER) > model.log 2>&1 < /dev/null &); \
+	for i in $$(seq 1 $(MODEL_WAIT)); do \
+		$(MODEL_HEALTH) && { echo "the model is ready after $$(( $$(date +%s) - start )) s"; exit 0; }; \
+		sleep 1; pgrep -x llama-server > /dev/null || break; \
+	done; \
+	echo "the model did not get ready. The last it said, in model.log:"; tail -n 5 model.log; pkill -x llama-server; exit 1
+
+# The whole gateway for one run: the model behind, the receiver behind, writing what the model
+# reads, and in front the client, which answers each window as it closes. It ends when the
+# receiver ends, which is when the vehicle closes the connection. Then it shows what the run
+# cost and stops the model. Stopped with Ctrl+C, it also stops the three.
+live: build $(if $(GRAPH),graph) model-up
+	@test -n "$(GRAPH)" || { echo "make live needs the knowledge graph, and GRAPH is empty"; exit 1; }
+	@trap 'pkill -x signal_receiver; pkill -x model_client; pkill -x llama-server' INT TERM HUP; \
+	pkill -x signal_receiver; pkill -x model_client; rm -f $(LIVE_PROMPTS); \
+	($(BIN)/signal_receiver --listen 0.0.0.0:$(PORT) --quiet $(if $(SAVE),--save $(SAVE)) --graph $(GRAPH) --questions $(QUESTIONS) \
+		--prompts $(LIVE_PROMPTS) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)) > .receiver.txt 2>&1 < /dev/null &); \
+	for i in $$(seq 1 50); do test -s $(LIVE_PROMPTS) && break; sleep 0.2; done; \
+	echo "waiting for the vehicle on port $(PORT): each window is answered as it closes"; \
+	$(BIN)/model_client --prompts $(LIVE_PROMPTS) --answers $(ANSWERS) --server 127.0.0.1:$(MODEL_PORT) --follow --writer signal_receiver; \
+	status=$$?; \
+	awk '/MemTotal/ { total = $$2 } /MemAvailable/ { free = $$2 } END { printf "gateway: %d MB of its %d MB of memory in use, with the model loaded\n", (total - free) / 1024, total / 1024 }' /proc/meminfo; \
+	pkill -x signal_receiver; pkill -x llama-server; \
+	grep -q '^--- signal_receiver' .receiver.txt && sed -n '/^--- signal_receiver/,$$p' .receiver.txt || tail -n 5 .receiver.txt; \
+	rm -f .receiver.txt; exit $$status
 
 # Without PROMPTS it asks the windows of the sample drive, which come with the project.
 ask: build
@@ -210,7 +252,7 @@ info:
 
 clean:
 	cargo clean
-	rm -f expected.ndjson received.ndjson .demo_sender.txt .sender.txt signal_graph.nt answers.ndjson
+	rm -f expected.ndjson received.ndjson .demo_sender.txt .sender.txt .receiver.txt signal_graph.nt answers.ndjson prompts.ndjson model.log
 
 # ---------------------------------------------------------------------------------------------
 # From your computer: the two Pis, driven through ssh.
@@ -240,8 +282,10 @@ PI_MAKE    := cd $(DIR) && PATH=$$HOME/.cargo/bin:$$PATH make --no-print-directo
 # The settings of a run, handed to make on each Pi.
 RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) PORT=$(PORT) WATCH=$(WATCH) SAVE=$(SAVE) \
               GRAPH=$(GRAPH) QUESTIONS=$(QUESTIONS) DEFAULTS=$(DEFAULTS) PROMPTS=$(PROMPTS) RDF=$(RDF) JELLY=$(JELLY)
+# The settings of the model, handed to make on the gateway.
+MODEL_RUN  := SLOTS=$(SLOTS) SLOT_TOKENS=$(SLOT_TOKENS) THREADS=$(THREADS) MODEL_PORT=$(MODEL_PORT) MODEL_WAIT=$(MODEL_WAIT) ANSWERS=$(ANSWERS)
 
-.PHONY: setup update model-setup menu run stop status data compare need-bench
+.PHONY: setup update model-setup menu run run-model stop status data compare need-bench
 
 need-bench:
 	@test -n "$(GATEWAY_IP)" && test -n "$(VEHICLE_IP)" || { echo "first: make setup GATEWAY_IP=... VEHICLE_IP=...   (the addresses at which this computer reaches each Pi)"; exit 1; }
@@ -287,11 +331,13 @@ menu: need-bench
 		echo "  1) run the 10 s sample from the vehicle to the gateway"; \
 		echo "  2) run the recording: LOG=$(LOG) DURATION=$(DURATION)"; \
 		echo "  3) status of the two Pis"; \
-		echo "  4) stop both ends"; \
+		echo "  4) stop both ends, and the language model"; \
 		echo "  5) bring the latest code to the two Pis and build it"; \
 		echo "  6) list every command"; \
 		echo "  7) run the sample drive: the knowledge graph and what a model would read"; \
 		echo "  8) get the language model: llama-server and the weights, onto the gateway"; \
+		echo "  9) run the sample drive with the language model: its answers and what they cost"; \
+		echo " 10) run the recording with the language model: LOG=$(LOG) DURATION=$(DURATION)"; \
 		echo "  q) quit"; \
 		printf "choice: "; \
 		read choice || exit 0; \
@@ -304,6 +350,8 @@ menu: need-bench
 			6) $(MAKE) --no-print-directory help ;; \
 			7) $(MAKE) --no-print-directory run LOG=sample/drive.log DURATION= ;; \
 			8) $(MAKE) --no-print-directory model-setup ;; \
+			9) $(MAKE) --no-print-directory run-model LOG=sample/drive.log DURATION= ;; \
+			10) $(MAKE) --no-print-directory run-model ;; \
 			q) exit 0 ;; \
 			*) echo "not an option: $$choice" ;; \
 		esac; \
@@ -323,9 +371,27 @@ run: need-bench
 	grep -A 20 '^--- signal_sender' .sender.txt || tail -n 5 .sender.txt; \
 	rm -f .sender.txt
 
+# The same run with the language model answering on the gateway. The model loads first, so the
+# vehicle only starts to send when it can be asked. What is seen live is each answer and what it
+# cost; at the end, what the model, the receiver and the sender spent, and the cost of each
+# answer is copied to this computer.
+run-model: need-bench
+	@$(SSH) $(VEHICLE_PI) 'cd $(DIR) && test -f $(LOG)' || { echo "the vehicle does not have $(LOG). Copy it with: make data FILE=...   or name another with LOG=..."; exit 1; }
+	@$(MAKE) --no-print-directory stop > /dev/null
+	@$(SSH) $(GATEWAY_PI) '$(PI_MAKE) model-up $(MODEL_RUN)'
+	@$(SSH) -n $(VEHICLE_PI) '$(PI_MAKE) send $(RUN)' > .sender.txt 2>&1 & \
+	$(SSH) -t $(GATEWAY_PI) '$(PI_MAKE) live $(RUN) $(MODEL_RUN)'; \
+	sleep 1; \
+	$(SSH) $(VEHICLE_PI) 'pkill -x signal_sender' > /dev/null; \
+	wait; \
+	grep -A 20 '^--- signal_sender' .sender.txt || tail -n 5 .sender.txt; \
+	rm -f .sender.txt
+	@$(SSH) $(GATEWAY_PI) 'cat $(DIR)/$(ANSWERS)' > $(ANSWERS) && echo "what each answer cost is in $(ANSWERS), copied here from the gateway: $$(grep -c '' $(ANSWERS)) answers"
+
 stop: need-bench
 	@$(SSH) $(VEHICLE_PI) 'pkill -x signal_sender' && echo "vehicle: signal_sender stopped" || echo "vehicle: signal_sender not running"
 	@$(SSH) $(GATEWAY_PI) 'pkill -x signal_receiver' && echo "gateway: signal_receiver stopped" || echo "gateway: signal_receiver not running"
+	@$(SSH) $(GATEWAY_PI) 'pkill -x model_client; pkill -x llama-server' && echo "gateway: the language model stopped" || echo "gateway: the language model not running"
 
 status: need-bench
 	@$(SSH) $(GATEWAY_PI) '$(PI_MAKE) info'
