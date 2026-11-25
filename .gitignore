@@ -1,2 +1,8 @@
 target
 .venv
+signal_graph.nt
+models
+llama.cpp
+prompts.ndjson
+answers.ndjson
+bench.mk
