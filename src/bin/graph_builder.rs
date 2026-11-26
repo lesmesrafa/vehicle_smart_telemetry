@@ -41,7 +41,7 @@ const QUANTITIES: [Quantity; 20] = [
     ("lateral_acceleration", "lateral acceleration", "m/s^2", "ESP12.LAT_ACCEL", 0.2),
     ("yaw_rate", "yaw rate", "deg/s", "ESP12.YAW_RATE", 0.5),
     ("brake_pressure", "pressure of the brake circuit", "bar", "ESP12.CYL_PRES", 1.0),
-    ("steering_wheel_angle", "steering wheel angle", "deg", "SAS11.SAS_Angle", 1.0),
+    ("steering_wheel_angle", "steering wheel angle, positive to the left", "deg", "SAS11.SAS_Angle", 1.0),
     ("steering_wheel_speed", "turning speed of the steering wheel", "", "SAS11.SAS_Speed", 4.0),
     ("brake_active", "brake active flag", "", "EMS12.BRAKE_ACT", 1.0),
     ("accelerator_pedal", "position of the accelerator pedal", "%", "EMS12.PV_AV_CAN", 1.0),

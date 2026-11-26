@@ -39,13 +39,14 @@ the knowledge graph:
   --bucket S           seconds of stream time each bucket of a signal covers (1)
   --history S          seconds of history kept per signal: the longest window (10)
   --prompts FILE       write what a language model would read: each prefix once, then each window
+  --bare               in those prefixes, leave out what the graph knows: only the DBC name of each signal
   --rdf FILE           write each window as RDF observations, in N-Triples
   --jelly FILE         write each window as RDF observations, in Jelly";
 const WITH_VALUE: [&str; 11] = [
     "--listen", "--save", "--watch", "--every", "--graph", "--questions", "--bucket", "--history", "--prompts", "--rdf",
     "--jelly",
 ];
-const WITHOUT_VALUE: [&str; 1] = ["--quiet"];
+const WITHOUT_VALUE: [&str; 2] = ["--quiet", "--bare"];
 
 /// What the gateway knows from what has arrived.
 struct State {
@@ -148,7 +149,7 @@ impl Knowledge {
         if let Some(path) = a.optional("--questions") {
             let text = fs::read_to_string(path).map_err(|e| with_name(path, e))?;
             for line in text.lines().filter(|line| !line.trim().is_empty() && !line.starts_with('#')) {
-                let question = Question::register(line, &graph, &live).map_err(|e| format!("{path}: {e}"))?;
+                let question = Question::register_as(line, &graph, &live, a.enabled("--bare")).map_err(|e| format!("{path}: {e}"))?;
                 println!(
                     "question '{}': {} signals, a window of {} s every {} s, prefix of {} bytes",
                     question.id,

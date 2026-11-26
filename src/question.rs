@@ -45,6 +45,13 @@ impl Question {
     /// identifier, window in seconds, slide in seconds, quantities or signals separated by commas,
     /// the question and its options separated by commas, with a tab between each of the six.
     pub fn register(line: &str, graph: &Graph, live: &Live) -> Result<Question, String> {
+        Question::register_as(line, graph, live, false)
+    }
+
+    /// The same and, with `bare`, a prefix that leaves out what the graph knows: each signal is
+    /// named as the DBC names it and nothing else is said of it, and no relation is given. The
+    /// signals and the windows are the same, so the two prefixes can be compared.
+    pub fn register_as(line: &str, graph: &Graph, live: &Live, bare: bool) -> Result<Question, String> {
         let fields: Vec<&str> = line.split('\t').map(str::trim).collect();
         let [id, window_s, slide_s, quantities, text, options] = fields[..] else {
             return Err(format!("expected 6 fields separated by tabs and found {}", fields.len()));
@@ -124,15 +131,15 @@ impl Question {
                 let from = sender.map_or(String::new(), |ecu| format!(", from ECU {ecu}"));
                 let step = text_at(signal, resolution).and_then(|r| r.parse().ok()).unwrap_or(1.0);
                 signals.push(Member { slot, quantity, decimals: decimals(step) });
-                let _ = writeln!(
-                    prefix,
-                    "{}. {described}{in_unit} ({message_name}.{}{from}{note})",
-                    signals.len(),
-                    text_at(signal, name).unwrap_or_default()
-                );
+                let signal_name = text_at(signal, name).unwrap_or_default();
+                let _ = if bare {
+                    writeln!(prefix, "{}. {message_name}.{signal_name}", signals.len())
+                } else {
+                    writeln!(prefix, "{}. {described}{in_unit} ({message_name}.{signal_name}{from}{note})", signals.len())
+                };
             }
         }
-        if any_assumed {
+        if any_assumed && !bare {
             prefix.push_str("Assumed: what that signal is was read from its name and unit, and not yet checked against its values.\n");
         }
 
@@ -155,7 +162,7 @@ impl Question {
                 let _ = writeln!(relations, "- {described} ({})", ends.join(", "));
             }
         }
-        if !relations.is_empty() {
+        if !relations.is_empty() && !bare {
             prefix.push_str("Relations between them:\n");
             prefix.push_str(&relations);
         }
@@ -300,6 +307,19 @@ mod tests {
              Options: yes, no\n\
              Each window gives, for every signal: last value, minimum, maximum, mean and change (last minus first).\n"
         );
+
+        // Without what the graph knows: the same two signals by their DBC names, and no relation.
+        let bare = Question::register_as(LINE, &graph, &live, true).unwrap();
+        assert_eq!(
+            bare.prefix,
+            "Signals of the vehicle:\n\
+             1. MOTION.SPEED\n\
+             2. MOTION.ACCEL\n\
+             Question: Is the vehicle braking?\n\
+             Options: yes, no\n\
+             Each window gives, for every signal: last value, minimum, maximum, mean and change (last minus first).\n"
+        );
+        assert_eq!(bare.signals.len(), question.signals.len());
 
         // With only one of its two quantities, the equation is left out.
         let alone = LINE.replace("vehicle_speed, longitudinal_acceleration", "vehicle_speed");
