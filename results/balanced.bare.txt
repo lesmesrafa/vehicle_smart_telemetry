@@ -1,0 +1,14 @@
+1797 windows with a right answer, 0 left out because a signal had no data
+
+hard_braking: 599 windows; right answers: no 522, yes 77
+    the model said: yes 599
+    accuracy 12.9 %; balanced accuracy 50.0 %, against 50.0 % for always the same answer (599 answers)
+turning: 599 windows; right answers: left 53, right 39, straight 507
+    the model said: right 599
+    accuracy 6.5 %; balanced accuracy 33.3 %, against 33.3 % for always the same answer (599 answers)
+speed_band: 599 windows; right answers: fast 63, medium 259, slow 178, stopped 99
+    the model said: slow 599
+    accuracy 29.7 %; balanced accuracy 25.0 %, against 25.0 % for always the same answer (599 answers)
+
+mean balanced accuracy over 3 questions: 36.1 %
+written to results/balanced.bare.tsv

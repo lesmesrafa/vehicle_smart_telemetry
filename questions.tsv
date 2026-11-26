@@ -3,9 +3,13 @@
 # Quantities and options are separated by commas. A quantity is one of the graph: it brings the
 # signals known to observe it or, when there are none, those that observe it by default.
 # MESSAGE.SIGNAL in its place asks for that one signal of this car.
-hard_braking	5	5	vehicle_speed, longitudinal_acceleration, brake_pressure	Is there a hard braking event in this window?	yes, no
-turning	5	5	steering_wheel_angle, yaw_rate, lateral_acceleration, vehicle_speed	Which way is the vehicle turning in this window?	left, right, straight
-speed_band	5	5	vehicle_speed	How fast is the vehicle going at the end of this window?	stopped, slow, medium, fast
-wheel_slip	5	5	wheel_speed_fl, wheel_speed_fr, wheel_speed_rl, wheel_speed_rr, vehicle_speed	Is one wheel turning at a different speed from the others?	yes, no
-lead_vehicle	5	5	lead_vehicle_distance, lead_vehicle_relative_speed, lead_vehicle_lateral_position	Is there a vehicle ahead in the same lane?	yes, no
-speed_sources	5	5	vehicle_speed, EMS11.VS, TCU12.VS_TCU	Do the three readings of the vehicle speed agree?	yes, no
+#
+# Each question says where its answers part, so that an answer can be checked against the
+# signals: scripts/score_answers.py holds the same limits. The signals are those of a car that
+# has no radar, like the one of the X-CANIDS dataset.
+hard_braking	5	5	longitudinal_acceleration, brake_pressure, vehicle_speed	Does the vehicle brake hard in this window? Braking is hard when the longitudinal acceleration goes below -2 m/s^2.	yes, no
+turning	5	5	steering_wheel_angle, yaw_rate	Which way does the vehicle turn in this window? It turns when the steering wheel angle goes beyond 30 deg to either side. If it turns both ways, answer the side of the larger angle.	left, right, straight
+speed_band	5	5	vehicle_speed	How fast is the vehicle going at the end of this window? Below 1 km/h it is stopped, below 30 km/h slow, below 80 km/h medium, and from 80 km/h fast.	stopped, slow, medium, fast
+speed_trend	5	5	vehicle_speed	Does the vehicle get faster, get slower or keep a steady speed over this window? It is steady when the speed changes by less than 5 km/h.	faster, slower, steady
+idling	5	5	vehicle_speed, engine_speed	Does the vehicle stand still with the engine running for the whole window? It stands still below 1 km/h, and the engine runs above 300 rpm.	yes, no
+coasting	5	5	vehicle_speed, brake_pressure	Does the vehicle slow down without the brake in this window? It slows down when the speed drops by more than 3 km/h, and the brake is in use when the pressure goes above 3 bar.	yes, no
