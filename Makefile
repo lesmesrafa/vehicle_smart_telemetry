@@ -40,6 +40,9 @@ ANSWERS     ?= answers.ndjson
 # IDLE seconds with nothing new.
 FOLLOW      ?=
 IDLE        ?= 60
+# With BARE=1 the model is told only the DBC name of each signal, and nothing of what the graph
+# knows: the other side of the accuracy test.
+BARE        ?=
 
 BIN := target/release
 
@@ -62,10 +65,10 @@ DBC_SHA256 := d7f822e3a8d220cfde83aec2ae4ed28ddbc44a38ff29bea2e12e3e321d73a607
 DBC_URL    := https://raw.githubusercontent.com/commaai/opendbc/$(DBC_COMMIT)/opendbc/dbc/hyundai_2015_ccan.dbc
 
 .DEFAULT_GOAL := help
-.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights model model-up live ask info clean
+.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights model model-up live ask score balanced info clean
 
 # What the receiver is told about the knowledge graph.
-KNOWLEDGE = $(if $(GRAPH),--graph $(GRAPH) --questions $(QUESTIONS) $(if $(PROMPTS),--prompts $(PROMPTS)) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)))
+KNOWLEDGE = $(if $(GRAPH),--graph $(GRAPH) --questions $(QUESTIONS) $(if $(PROMPTS),--prompts $(PROMPTS)) $(if $(BARE),--bare) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)))
 
 # What the model needs before it starts, if it is the program and the weights this Makefile knows
 # how to get; with another LLAMA or MODEL, they are yours to bring.
@@ -90,6 +93,8 @@ help:
 	@echo "vehicle    make llama      download llama.cpp at its pinned commit and build llama-server"
 	@echo "gateway    make weights    download the weights of the model and check their sha256"
 	@echo "gateway    make model      start the language model (llama-server) and leave it listening"
+	@echo "any        make score      check the answers in ANSWERS against the ones the signals give, from PROMPTS"
+	@echo "any        make balanced   write data/balanced.log, a made-up drive in which every answer happens often"
 	@echo "gateway    make ask        ask the model every window of PROMPTS and show what each answer cost"
 	@echo "gateway    make live       model, receiver and questions at once: answers each window as the vehicle sends"
 	@echo "vehicle    make send       decode LOG and send it to the gateway in real time"
@@ -99,6 +104,7 @@ help:
 	@echo "computer   make setup GATEWAY_IP=... VEHICLE_IP=...   prepare the two Pis, then the menu"
 	@echo "computer   make menu       choose what to do with the two Pis"
 	@echo "computer   make run        start both ends and show what the gateway receives"
+	@echo "computer   make accuracy   LOG=data/balanced.log: every window to the model, then score it; BARE=1 without the graph"
 	@echo "computer   make run-model  the same with the language model: each answer live, and what the run cost"
 	@echo "computer   make stop       stop both ends, and the language model"
 	@echo "computer   make status     what each Pi has, and whether the vehicle reaches the gateway"
@@ -222,7 +228,7 @@ live: build $(if $(GRAPH),graph) model-up
 	@trap 'pkill -x signal_receiver; pkill -x model_client; pkill -x llama-server' INT TERM HUP; \
 	pkill -x signal_receiver; pkill -x model_client; rm -f $(LIVE_PROMPTS); \
 	($(BIN)/signal_receiver --listen 0.0.0.0:$(PORT) --quiet $(if $(SAVE),--save $(SAVE)) --graph $(GRAPH) --questions $(QUESTIONS) \
-		--prompts $(LIVE_PROMPTS) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)) > .receiver.txt 2>&1 < /dev/null &); \
+		--prompts $(LIVE_PROMPTS) $(if $(BARE),--bare) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)) > .receiver.txt 2>&1 < /dev/null &); \
 	for i in $$(seq 1 50); do test -s $(LIVE_PROMPTS) && break; sleep 0.2; done; \
 	echo "waiting for the vehicle on port $(PORT): each window is answered as it closes"; \
 	$(BIN)/model_client --prompts $(LIVE_PROMPTS) --answers $(ANSWERS) --server 127.0.0.1:$(MODEL_PORT) --follow --writer signal_receiver; \
@@ -236,6 +242,18 @@ live: build $(if $(GRAPH),graph) model-up
 ask: build
 	$(BIN)/model_client --prompts $(if $(PROMPTS),$(PROMPTS),sample/prompts.ndjson) --answers $(ANSWERS) \
 		--server 127.0.0.1:$(MODEL_PORT) $(if $(FOLLOW),--follow --idle $(IDLE))
+
+# The answers of the model against the ones the signals give, worked out from the same windows
+# the model was shown.
+score:
+	python3 scripts/score_answers.py --prompts $(LIVE_PROMPTS) --answers $(ANSWERS)
+
+# A made-up drive of 50 minutes in which every answer of the questions happens often. It needs
+# only python3, and the seed (--seed, 8 unless told otherwise) fixes the drive.
+balanced: data/balanced.log
+data/balanced.log: scripts/make_balanced_drive.py | $(DBC)
+	@mkdir -p data
+	python3 scripts/make_balanced_drive.py $(DBC) $@
 
 # What this machine has. `make status` asks both Pis for it.
 info:
@@ -280,12 +298,12 @@ VEHICLE_PI := $(PI_USER)@$(VEHICLE_IP)
 # make on a Pi, inside the project. ssh does not put ~/.cargo/bin, where rustup leaves cargo, in PATH.
 PI_MAKE    := cd $(DIR) && PATH=$$HOME/.cargo/bin:$$PATH make --no-print-directory
 # The settings of a run, handed to make on each Pi.
-RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) PORT=$(PORT) WATCH=$(WATCH) SAVE=$(SAVE) \
+RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) PORT=$(PORT) WATCH=$(WATCH) SAVE=$(SAVE) BARE=$(BARE) \
               GRAPH=$(GRAPH) QUESTIONS=$(QUESTIONS) DEFAULTS=$(DEFAULTS) PROMPTS=$(PROMPTS) RDF=$(RDF) JELLY=$(JELLY)
 # The settings of the model, handed to make on the gateway.
 MODEL_RUN  := SLOTS=$(SLOTS) SLOT_TOKENS=$(SLOT_TOKENS) THREADS=$(THREADS) MODEL_PORT=$(MODEL_PORT) MODEL_WAIT=$(MODEL_WAIT) ANSWERS=$(ANSWERS)
 
-.PHONY: setup update model-setup menu run run-model stop status data compare need-bench
+.PHONY: setup update model-setup menu run run-model accuracy stop status data compare need-bench
 
 need-bench:
 	@test -n "$(GATEWAY_IP)" && test -n "$(VEHICLE_IP)" || { echo "first: make setup GATEWAY_IP=... VEHICLE_IP=...   (the addresses at which this computer reaches each Pi)"; exit 1; }
@@ -338,6 +356,8 @@ menu: need-bench
 		echo "  8) get the language model: llama-server and the weights, onto the gateway"; \
 		echo "  9) run the sample drive with the language model: its answers and what they cost"; \
 		echo " 10) run the recording with the language model: LOG=$(LOG) DURATION=$(DURATION)"; \
+		echo " 11) accuracy test on the balanced drive: the answers of the model against the ones the signals give"; \
+		echo " 12) the same test without the graph: the model is told only the DBC name of each signal"; \
 		echo "  q) quit"; \
 		printf "choice: "; \
 		read choice || exit 0; \
@@ -352,6 +372,8 @@ menu: need-bench
 			8) $(MAKE) --no-print-directory model-setup ;; \
 			9) $(MAKE) --no-print-directory run-model LOG=sample/drive.log DURATION= ;; \
 			10) $(MAKE) --no-print-directory run-model ;; \
+			11) $(MAKE) --no-print-directory accuracy LOG=data/balanced.log BARE= ;; \
+			12) $(MAKE) --no-print-directory accuracy LOG=data/balanced.log BARE=1 ;; \
 			q) exit 0 ;; \
 			*) echo "not an option: $$choice" ;; \
 		esac; \
@@ -386,7 +408,24 @@ run-model: need-bench
 	wait; \
 	grep -A 20 '^--- signal_sender' .sender.txt || tail -n 5 .sender.txt; \
 	rm -f .sender.txt
-	@$(SSH) $(GATEWAY_PI) 'cat $(DIR)/$(ANSWERS)' > $(ANSWERS) && echo "what each answer cost is in $(ANSWERS), copied here from the gateway: $$(grep -c '' $(ANSWERS)) answers"
+	@$(SSH) $(GATEWAY_PI) 'cat $(DIR)/$(ANSWERS)' > $(ANSWERS).part 2> /dev/null && mv $(ANSWERS).part $(ANSWERS) \
+		&& echo "what each answer cost is in $(ANSWERS), copied here from the gateway: $$(grep -c '' $(ANSWERS)) answers" \
+		|| { rm -f $(ANSWERS).part; echo "no answers to copy: the run on the gateway did not get to ask"; exit 1; }
+	@$(SSH) $(GATEWAY_PI) 'cat $(DIR)/$(LIVE_PROMPTS)' > $(LIVE_PROMPTS).part && mv $(LIVE_PROMPTS).part $(LIVE_PROMPTS) \
+		&& echo "what the model was shown is in $(LIVE_PROMPTS)"
+
+# The accuracy test. The recording goes as fast as it can be read: the windows follow the time of
+# the recording, not the clock, so they are the same ones, and the model answers each at its own
+# pace. Then the answers are checked against the ones the signals give. With BARE=1 the model is
+# told only the DBC names of the signals. What the run leaves is kept under results/.
+TAG = $(basename $(notdir $(LOG))).$(if $(BARE),bare,graph)
+accuracy: need-bench
+	@test -f $(LOG) || test "$(LOG)" != data/balanced.log || $(MAKE) --no-print-directory balanced
+	@$(SSH) $(VEHICLE_PI) 'cd $(DIR) && test -f $(LOG)' || ! test -f $(LOG) || $(MAKE) --no-print-directory data FILE=$(LOG)
+	@$(MAKE) --no-print-directory run-model SPEED=0 DURATION=
+	@mkdir -p results && cp $(ANSWERS) results/$(TAG).answers.ndjson && cp $(LIVE_PROMPTS) results/$(TAG).prompts.ndjson
+	@python3 scripts/score_answers.py --prompts results/$(TAG).prompts.ndjson --answers results/$(TAG).answers.ndjson \
+		--save results/$(TAG).tsv | tee results/$(TAG).txt
 
 stop: need-bench
 	@$(SSH) $(VEHICLE_PI) 'pkill -x signal_sender' && echo "vehicle: signal_sender stopped" || echo "vehicle: signal_sender not running"
