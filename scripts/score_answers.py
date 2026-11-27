@@ -80,7 +80,9 @@ def right_answers(prompts_path):
                 no_rule.append(question)
             elif STATED[question] not in entry["prefix"]:
                 other_text.append(question)
-            for text in entry["prefix"].split("\n"):
+            # Only the list of signals, which ends where the question starts: a prefix may go on
+            # with worked examples, whose lines also begin with a number.
+            for text in entry["prefix"].split("\nQuestion:")[0].split("\n"):
                 found = SIGNAL_NAME.match(text)
                 if found:
                     signals[question][int(found.group(1))] = found.group(2)

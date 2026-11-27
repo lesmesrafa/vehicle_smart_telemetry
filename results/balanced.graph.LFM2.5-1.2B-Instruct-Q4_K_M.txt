@@ -1,0 +1,23 @@
+3594 windows with a right answer, 0 left out because a signal had no data
+
+hard_braking: 599 windows; right answers: no 522, yes 77
+    the model said: no 509, yes 90
+    accuracy 76.5 %; balanced accuracy 51.1 %, against 50.0 % for always the same answer (599 answers)
+turning: 599 windows; right answers: left 53, right 39, straight 507
+    the model said: straight 599
+    accuracy 84.6 %; balanced accuracy 33.3 %, against 33.3 % for always the same answer (599 answers)
+speed_band: 599 windows; right answers: fast 63, medium 259, slow 178, stopped 99
+    the model said: slow 247, stopped 352
+    accuracy 24.9 %; balanced accuracy 30.6 %, against 25.0 % for always the same answer (599 answers)
+speed_trend: 599 windows; right answers: faster 156, slower 212, steady 231
+    the model said: faster 599
+    accuracy 26.0 %; balanced accuracy 33.3 %, against 33.3 % for always the same answer (599 answers)
+idling: 599 windows; right answers: no 512, yes 87
+    the model said: no 284, yes 315
+    accuracy 32.9 %; balanced accuracy 19.2 %, against 50.0 % for always the same answer (599 answers)
+coasting: 599 windows; right answers: no 516, yes 83
+    the model said: no 263, yes 336
+    accuracy 53.1 %; balanced accuracy 65.7 %, against 50.0 % for always the same answer (599 answers)
+
+mean balanced accuracy over 6 questions: 38.9 %
+written to results/balanced.graph.LFM2.5-1.2B-Instruct-Q4_K_M.tsv
