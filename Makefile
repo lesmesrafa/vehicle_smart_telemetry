@@ -43,6 +43,13 @@ IDLE        ?= 60
 # With BARE=1 the model is told only the DBC name of each signal, and nothing of what the graph
 # knows: the other side of the accuracy test.
 BARE        ?=
+# A larger model that reads again, on the vehicle Pi, what an accuracy run showed the small one:
+# its file, where it comes from, which runs of results/ it reads, and how many windows of each
+# (empty: all of them).
+READER      ?= models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf
+READER_URL  ?= https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/$(notdir $(READER))
+RUNS        ?= balanced.graph balanced.bare
+FIRST       ?=
 
 BIN := target/release
 
@@ -105,6 +112,8 @@ help:
 	@echo "computer   make menu       choose what to do with the two Pis"
 	@echo "computer   make run        start both ends and show what the gateway receives"
 	@echo "computer   make accuracy   LOG=data/balanced.log: every window to the model, then score it; BARE=1 without the graph"
+	@echo "computer   make reader-setup   download READER, a larger model, onto the vehicle Pi"
+	@echo "computer   make reread     the prompts of RUNS, in results/, read again by READER on the vehicle Pi, and scored"
 	@echo "computer   make run-model  the same with the language model: each answer live, and what the run cost"
 	@echo "computer   make stop       stop both ends, and the language model"
 	@echo "computer   make status     what each Pi has, and whether the vehicle reaches the gateway"
@@ -124,6 +133,8 @@ help:
 	@echo "          LLAMA_DIR=$(LLAMA_DIR) JOBS=$(JOBS) (compilers at once in make llama) BUILD_MIN_MB=$(BUILD_MIN_MB)"
 	@echo "          SLOTS=$(SLOTS) (one per question) SLOT_TOKENS=$(SLOT_TOKENS) (room for one prefix and one window)"
 	@echo "          ANSWERS=$(ANSWERS) FOLLOW=$(FOLLOW) (1: keep reading while the receiver writes) IDLE=$(IDLE)"
+	@echo "reader:   READER=$(READER) RUNS=$(RUNS) FIRST=$(FIRST) (windows of each run; empty: all)"
+	@echo "          READER_URL=$(READER_URL)"
 	@echo "bench:    GATEWAY_IP=$(GATEWAY_IP) VEHICLE_IP=$(VEHICLE_IP) PI_USER=$(PI_USER) DIR=$(DIR)"
 
 build:
@@ -303,7 +314,7 @@ RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) 
 # The settings of the model, handed to make on the gateway.
 MODEL_RUN  := SLOTS=$(SLOTS) SLOT_TOKENS=$(SLOT_TOKENS) THREADS=$(THREADS) MODEL_PORT=$(MODEL_PORT) MODEL_WAIT=$(MODEL_WAIT) ANSWERS=$(ANSWERS)
 
-.PHONY: setup update model-setup menu run run-model accuracy stop status data compare need-bench
+.PHONY: setup update model-setup menu run run-model accuracy reader-setup reread stop status data compare need-bench
 
 need-bench:
 	@test -n "$(GATEWAY_IP)" && test -n "$(VEHICLE_IP)" || { echo "first: make setup GATEWAY_IP=... VEHICLE_IP=...   (the addresses at which this computer reaches each Pi)"; exit 1; }
@@ -358,6 +369,8 @@ menu: need-bench
 		echo " 10) run the recording with the language model: LOG=$(LOG) DURATION=$(DURATION)"; \
 		echo " 11) accuracy test on the balanced drive: the answers of the model against the ones the signals give"; \
 		echo " 12) the same test without the graph: the model is told only the DBC name of each signal"; \
+		echo " 13) get a larger model onto the vehicle Pi: $(notdir $(READER))"; \
+		echo " 14) read the prompts of tests 11 and 12 again with the larger model, and score it"; \
 		echo "  q) quit"; \
 		printf "choice: "; \
 		read choice || exit 0; \
@@ -374,6 +387,8 @@ menu: need-bench
 			10) $(MAKE) --no-print-directory run-model ;; \
 			11) $(MAKE) --no-print-directory accuracy LOG=data/balanced.log BARE= ;; \
 			12) $(MAKE) --no-print-directory accuracy LOG=data/balanced.log BARE=1 ;; \
+			13) $(MAKE) --no-print-directory reader-setup ;; \
+			14) $(MAKE) --no-print-directory reread RUNS="balanced.graph balanced.bare" ;; \
 			q) exit 0 ;; \
 			*) echo "not an option: $$choice" ;; \
 		esac; \
@@ -427,8 +442,45 @@ accuracy: need-bench
 	@python3 scripts/score_answers.py --prompts results/$(TAG).prompts.ndjson --answers results/$(TAG).answers.ndjson \
 		--save results/$(TAG).tsv | tee results/$(TAG).txt
 
+# A reader that reads. When the small model gives the same answer to every window, a run with
+# and without the graph cannot tell what the graph adds. So the prompts of that run are read
+# again by a larger model, on the vehicle Pi, which has the memory for it: nothing is streamed,
+# and the model sees, byte for byte, what the small one saw. It is not a model for the gateway;
+# it tells whether the text carries what the question needs.
+READER_TAG = $(basename $(notdir $(READER)))
+
+# The server is the one the vehicle already built for the gateway. The weights only get their
+# name once the download has ended, and a download that was cut goes on from where it stopped.
+reader-setup: need-bench
+	@$(SSH) $(VEHICLE_PI) '$(PI_MAKE) llama JOBS=$(JOBS)'
+	@$(SSH) -t $(VEHICLE_PI) 'cd $(DIR) && mkdir -p $(dir $(READER)) && { test -f $(READER) || \
+		{ curl -fL --retry 3 -C - --progress-bar -o $(READER).part "$(READER_URL)" && mv $(READER).part $(READER); }; }' \
+		|| { echo "the download did not end. Is READER_URL the address of the file? It is $(READER_URL)"; exit 1; }
+	@$(SSH) $(VEHICLE_PI) 'cd $(DIR) && echo "vehicle: $(READER), $$(stat -c %s $(READER)) bytes, sha256 $$(sha256sum < $(READER) | cut -d" " -f1)"'
+
+# Each run of RUNS is results/<run>.prompts.ndjson, which make accuracy left. With FIRST, only
+# the first windows of each. What comes back is kept beside it, under the name of the reader.
+reread: need-bench
+	@for run in $(RUNS); do test -f results/$$run.prompts.ndjson || \
+		{ echo "results/$$run.prompts.ndjson is not here: it is what make accuracy leaves, and RUNS names the runs to read again"; exit 1; }; done
+	@$(SSH) $(VEHICLE_PI) 'cd $(DIR) && test -f $(READER)' || { echo "the vehicle does not have $(READER): make reader-setup"; exit 1; }
+	@for run in $(RUNS); do \
+		echo; echo "=== $$run, read again by $(READER_TAG)"; \
+		questions=$$(grep -c "\"prefix\"" results/$$run.prompts.ndjson); \
+		if test -n "$(FIRST)"; then head -n $$(( questions + questions * $(FIRST) )) results/$$run.prompts.ndjson; else cat results/$$run.prompts.ndjson; fi \
+			| $(SSH) $(VEHICLE_PI) 'mkdir -p $(DIR)/reread && cat > $(DIR)/reread/prompts.ndjson' || exit 1; \
+		$(SSH) -t $(VEHICLE_PI) 'pkill -x model_client; pkill -x llama-server; rm -f $(DIR)/reread/answers.ndjson; \
+			( $(PI_MAKE) model-up MODEL=$(READER) $(MODEL_RUN) ) && \
+			( $(PI_MAKE) ask PROMPTS=reread/prompts.ndjson ANSWERS=reread/answers.ndjson MODEL_PORT=$(MODEL_PORT) ); \
+			status=$$?; pkill -x llama-server; exit $$status' || exit 1; \
+		out=results/$$run.$(READER_TAG); \
+		$(SSH) $(VEHICLE_PI) 'cat $(DIR)/reread/answers.ndjson' > $$out.answers.ndjson.part && mv $$out.answers.ndjson.part $$out.answers.ndjson || exit 1; \
+		python3 scripts/score_answers.py --prompts results/$$run.prompts.ndjson --answers $$out.answers.ndjson --save $$out.tsv | tee $$out.txt; \
+	done
+
 stop: need-bench
 	@$(SSH) $(VEHICLE_PI) 'pkill -x signal_sender' && echo "vehicle: signal_sender stopped" || echo "vehicle: signal_sender not running"
+	@$(SSH) $(VEHICLE_PI) 'pkill -x model_client; pkill -x llama-server' && echo "vehicle: the larger model stopped" || echo "vehicle: the larger model not running"
 	@$(SSH) $(GATEWAY_PI) 'pkill -x signal_receiver' && echo "gateway: signal_receiver stopped" || echo "gateway: signal_receiver not running"
 	@$(SSH) $(GATEWAY_PI) 'pkill -x model_client; pkill -x llama-server' && echo "gateway: the language model stopped" || echo "gateway: the language model not running"
 

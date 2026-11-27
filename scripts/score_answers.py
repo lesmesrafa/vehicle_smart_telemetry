@@ -50,19 +50,36 @@ RULES = {
     "coasting": lambda s: yes_no(s["CLU11.CF_Clu_Vanz"]["change"] < -3 and s["ESP12.CYL_PRES"]["max"] <= 3),
 }
 
+# What the text of each question has to say for its rule to be the one that applies. A question
+# with the same name and another text was asked something else, and its score here means little.
+STATED = {
+    "hard_braking": "goes below -2 m/s^2",
+    "turning": "goes beyond 30 deg to either side",
+    "speed_band": "Below 1 km/h it is stopped, below 30 km/h slow, below 80 km/h medium, and from 80 km/h fast",
+    "speed_trend": "changes by less than 5 km/h",
+    "idling": "below 1 km/h, and the engine runs above 300 rpm",
+    "coasting": "drops by more than 3 km/h, and the brake is in use when the pressure goes above 3 bar",
+}
+
 SIGNAL_NAME = re.compile(r"^(\d+)\. (?:.*\()?([A-Za-z0-9_]+\.[A-Za-z0-9_]+)")
 VALUES = re.compile(r"^(\d+)\. last (\S+), min (\S+), max (\S+), mean (\S+), change (\S+)$")
 
 
 def right_answers(prompts_path):
-    """(question, t) -> the answer the rule gives, for every window whose signals all had values."""
-    signals, truth, skipped = {}, {}, 0
+    """(question, t) -> the answer the rule gives, for every window whose signals all had values;
+    how many windows were left out; the questions asked that have no rule here; and the ones
+    whose text does not state the limits of their rule."""
+    signals, truth, skipped, no_rule, other_text = {}, {}, 0, [], []
     for line in open(prompts_path):
         entry = json.loads(line)
         question = entry["question"]
         if "prefix" in entry:
             # The signals of the question, in the order the windows list them.
             signals[question] = {}
+            if question not in RULES:
+                no_rule.append(question)
+            elif STATED[question] not in entry["prefix"]:
+                other_text.append(question)
             for text in entry["prefix"].split("\n"):
                 found = SIGNAL_NAME.match(text)
                 if found:
@@ -80,7 +97,7 @@ def right_answers(prompts_path):
             truth[(question, entry["t"])] = RULES[question](stats)
         except KeyError:
             skipped += 1        # a signal with no data in this window: there is no answer to check
-    return truth, skipped
+    return truth, skipped, no_rule, other_text
 
 
 def main():
@@ -90,7 +107,7 @@ def main():
     parser.add_argument("--save", metavar="FILE", help="write question, t, right answer and answer of the model, as TSV")
     args = parser.parse_args()
 
-    truth, skipped = right_answers(args.prompts)
+    truth, skipped, no_rule, other_text = right_answers(args.prompts)
     if not truth:
         sys.exit(f"error: {args.prompts} has no window of a question this script has a rule for: {', '.join(RULES)}")
     given = {}
@@ -100,7 +117,17 @@ def main():
             given[(entry["question"], entry["t"])] = entry["answer"]
 
     questions = [q for q in RULES if any(key[0] == q for key in truth)]
-    print(f"{len(truth)} windows with a right answer, {skipped} left out because a signal had no data\n")
+    print(f"{len(truth)} windows with a right answer, {skipped} left out because a signal had no data")
+    warnings = []
+    if no_rule:
+        warnings.append(f"not scored, this script has no rule for them: {', '.join(no_rule)}")
+    if other_text:
+        warnings.append(f"WARNING: the text of {', '.join(other_text)} does not state the limits applied here, so the model was asked "
+                        "something else.\n         Is the questions.tsv of the gateway the one that came with this script?")
+    missing = [q for q in RULES if q not in questions]
+    if missing and (no_rule or other_text):
+        warnings.append(f"not asked: {', '.join(missing)}")
+    print("\n".join(warnings + [""]))
     balanced_all, rows = [], []
     for question in questions:
         keys = sorted(key for key in truth if key[0] == question)
@@ -113,6 +140,9 @@ def main():
         if not answered:
             print("    the model answered none of them")
             continue
+        if len(answered) < len(keys):
+            among = ", ".join(f"{c} {sum(truth[k] == c for k in answered)}" for c in classes if any(truth[k] == c for k in answered))
+            print(f"    only {len(answered)} of them were answered; among those, right answers: {among}")
         said = sorted({given[key] for key in answered})
         print("    the model said: " + ", ".join(f"{c} {sum(given[k] == c for k in answered)}" for c in said))
         recalls = []
@@ -128,6 +158,8 @@ def main():
         rows += [(question, key[1], truth[key], given[key]) for key in answered]
     if balanced_all:
         print(f"\nmean balanced accuracy over {len(balanced_all)} questions: {100 * sum(balanced_all) / len(balanced_all):.1f} %")
+    if other_text and balanced_all:
+        print("\n".join(w for w in warnings if w.startswith("WARNING")))
     if args.save:
         with open(args.save, "w") as out:
             out.write("question\tt\tright_answer\tmodel_answer\n")
