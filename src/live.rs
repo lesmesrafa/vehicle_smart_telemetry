@@ -171,6 +171,16 @@ impl Live {
         }
         total
     }
+
+    /// How a signal moved through the same `count` buckets: its mean in each one, from the oldest
+    /// to the newest, and `None` for a bucket in which nothing arrived. These are the buckets the
+    /// summary is merged from, so nothing more is kept in memory for it.
+    pub fn series(&self, slot: usize, end: i64, count: usize) -> impl Iterator<Item = Option<f64>> + '_ {
+        (end - count.min(self.ring) as i64..end).map(move |number| {
+            let bucket = &self.buckets[slot * self.ring + number.rem_euclid(self.ring as i64) as usize];
+            (bucket.number == number).then(|| bucket.summary.mean())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -220,6 +230,10 @@ mod tests {
         assert_eq!(live.summary(slot, 4, 4).unwrap().count, 3);
         assert_eq!(live.summary(slot, 3, 1), None);
         assert_eq!(live.summary(slot, 5, 1).unwrap().last, 99.0);
+
+        // The same three seconds one by one: the mean of each, and none where nothing arrived.
+        let series: Vec<Option<f64>> = live.series(slot, 4, 3).collect();
+        assert_eq!(series, [Some(20.0), None, Some(8.5)]);
 
         let mut other = sample(5.0, 1.0);
         other.message = "UNKNOWN".to_string();

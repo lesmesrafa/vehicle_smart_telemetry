@@ -199,6 +199,30 @@ impl Question {
         out.push_str("Answer:");
     }
 
+    /// Writes how each signal moved through that window: for every signal, in the order of the
+    /// text, its mean in each bucket of the window, from the oldest to the newest. It is a JSON
+    /// array with one array per signal. Each mean is written as text, with the decimals of its
+    /// signal, so that whoever shows it shows the digits `window_text` would; a bucket in which
+    /// nothing arrived is `null`.
+    pub fn window_series(&self, live: &Live, end: i64, out: &mut String) {
+        out.push('[');
+        for (i, member) in self.signals.iter().enumerate() {
+            out.push_str(if i == 0 { "[" } else { ",[" });
+            let d = member.decimals;
+            for (j, mean) in live.series(member.slot, end, self.window).enumerate() {
+                if j > 0 {
+                    out.push(',');
+                }
+                let _ = match mean {
+                    Some(mean) => write!(out, "\"{:.d$}\"", tidy(mean, d)),
+                    None => write!(out, "null"),
+                };
+            }
+            out.push(']');
+        }
+        out.push(']');
+    }
+
     /// The same window as RDF: a node for the window and one observation per signal that had
     /// values, each triple as three terms in N-Triples syntax. `serial` keeps the blank nodes of
     /// this window apart from those of every other one.
@@ -355,6 +379,11 @@ mod tests {
              2. no data\n\
              Answer:"
         );
+
+        // How each signal moved: its mean in each of the two seconds of the window.
+        let mut series = String::new();
+        question.window_series(&live, 2, &mut series);
+        assert_eq!(series, "[[\"49.8\",\"44.0\"],[null,null]]");
 
         let triples = question.window_triples(&graph, &live, 2, 7);
         assert_eq!(triples.len(), 4 + 11); // the window, and one observation: the signal that had values

@@ -56,6 +56,14 @@ FIRST       ?=
 # question, and from how many of the first windows of a run they are taken.
 SHOTS       ?= 2
 POOL        ?= 100
+# Tuning the model: the made-up drive its examples come from, which is not the one of the
+# accuracy test, and the tuned model to take to the gateway, as the converter of llama.cpp
+# wrote it, with the bits it is narrowed to there.
+TRAIN_LOG     ?= data/train.log
+TRAIN_WINDOWS ?= 1200
+TRAIN_SEED    ?= 1
+TUNED         ?=
+QUANT         ?= Q4_0
 
 BIN := target/release
 
@@ -64,6 +72,7 @@ BIN := target/release
 LLAMA_REPO   := https://github.com/ggml-org/llama.cpp
 LLAMA_COMMIT := de306972853640223d20ce57a3d9e44f6719d3db
 LLAMA_BUILT  := $(LLAMA_DIR)/build/bin/llama-server
+LLAMA_QUANTIZE := $(LLAMA_DIR)/build/bin/llama-quantize
 
 # The weights of LFM2.5-230M at 4 bits, from the repository of Liquid AI on Hugging Face, pinned
 # to one commit. The sha256 is the one that repository gives for the file, 149080928 bytes.
@@ -78,7 +87,7 @@ DBC_SHA256 := d7f822e3a8d220cfde83aec2ae4ed28ddbc44a38ff29bea2e12e3e321d73a607
 DBC_URL    := https://raw.githubusercontent.com/commaai/opendbc/$(DBC_COMMIT)/opendbc/dbc/hyundai_2015_ccan.dbc
 
 .DEFAULT_GOAL := help
-.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights model model-up live ask score balanced examples info clean
+.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights quantize model model-up live ask score balanced examples open open-series info clean
 
 # What the receiver is told about the knowledge graph.
 KNOWLEDGE = $(if $(GRAPH),--graph $(GRAPH) --questions $(QUESTIONS) $(if $(PROMPTS),--prompts $(PROMPTS)) $(if $(BARE),--bare) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)))
@@ -106,6 +115,7 @@ help:
 	@echo "vehicle    make llama      download llama.cpp at its pinned commit and build llama-server"
 	@echo "gateway    make weights    download the weights of the model and check their sha256"
 	@echo "gateway    make model      start the language model (llama-server) and leave it listening"
+	@echo "vehicle    make quantize FROM=models/a-f16.gguf TO=models/a-Q4_0.gguf   narrow a model to QUANT bits"
 	@echo "any        make score      check the answers in ANSWERS against the ones the signals give, from PROMPTS"
 	@echo "any        make balanced   write data/balanced.log, a made-up drive in which every answer happens often"
 	@echo "gateway    make ask        ask the model every window of PROMPTS and show what each answer cost"
@@ -121,6 +131,11 @@ help:
 	@echo "computer   make reader-setup   download READER, a larger model, onto the vehicle Pi"
 	@echo "computer   make reread     the prompts of RUNS, in results/, read again by READER on the vehicle Pi, and scored; ON=gateway: by the model of the gateway"
 	@echo "any        make examples   for each run of RUNS, write results/<run>.shots$(SHOTS).prompts.ndjson: the same prompts with SHOTS examples of each answer"
+	@echo "any        make open       for each run of RUNS, write results/<run>.open.prompts.ndjson: the questions without their limits, each value beside what is known of its signal"
+	@echo "any        make open-series   the same as results/<run>.open.series.prompts.ndjson, and after each summary how the signal moved through the window"
+	@echo "computer   make windows LOG=data/balanced.log   write the windows of LOG again, with the graph and without it; no model runs"
+	@echo "computer   make training-set   write results/train.graph.jsonl and results/train.bare.jsonl: windows of another drive with their right answer"
+	@echo "computer   make tuned-setup TUNED=tuned/name-f16.gguf   take a tuned model to the gateway, narrowed to QUANT bits on the vehicle Pi"
 	@echo "computer   make run-model  the same with the language model: each answer live, and what the run cost"
 	@echo "computer   make stop       stop both ends, and the language model"
 	@echo "computer   make status     what each Pi has, and whether the vehicle reaches the gateway"
@@ -143,6 +158,7 @@ help:
 	@echo "reader:   ON=$(ON) READER=$(READER) RUNS=$(RUNS) FIRST=$(FIRST) (windows of each run; empty: all)"
 	@echo "examples: SHOTS=$(SHOTS) of each answer, from the first POOL=$(POOL) windows of each run"
 	@echo "          READER_URL=$(READER_URL)"
+	@echo "tuning:   TRAIN_LOG=$(TRAIN_LOG) TRAIN_WINDOWS=$(TRAIN_WINDOWS) TRAIN_SEED=$(TRAIN_SEED) TUNED=$(TUNED) QUANT=$(QUANT)"
 	@echo "bench:    GATEWAY_IP=$(GATEWAY_IP) VEHICLE_IP=$(VEHICLE_IP) PI_USER=$(PI_USER) DIR=$(DIR)"
 
 build:
@@ -214,6 +230,17 @@ $(LLAMA_BUILT):
 	cmake --build $(LLAMA_DIR)/build -j $(JOBS) --target llama-server
 	@$@ --version
 
+# The tool that narrows the weights of a model to fewer bits, built beside the server.
+$(LLAMA_QUANTIZE): | $(LLAMA_BUILT)
+	cmake --build $(LLAMA_DIR)/build -j $(JOBS) --target llama-quantize
+
+# A model as the converter of llama.cpp writes it, in 16 bits, narrowed to the QUANT bits the
+# gateway runs. The file only gets its name once the tool has ended.
+quantize: $(LLAMA_QUANTIZE)
+	@test -n "$(FROM)" && test -f "$(FROM)" && test -n "$(TO)" || { echo "usage: make quantize FROM=models/name-f16.gguf TO=models/name-$(QUANT).gguf"; exit 1; }
+	$(LLAMA_QUANTIZE) $(FROM) $(TO).part $(QUANT) $(THREADS)
+	@mv $(TO).part $(TO)
+
 # The file only gets its name once the checksum has matched. A download that was cut goes on
 # from where it stopped; one that ends with other bytes is thrown away.
 $(MODEL_FILE):
@@ -274,6 +301,11 @@ data/balanced.log: scripts/make_balanced_drive.py | $(DBC)
 	@mkdir -p data
 	python3 scripts/make_balanced_drive.py $(DBC) $@
 
+# Another made-up drive, with another seed, to tune a model with: no window of it is in the test.
+$(TRAIN_LOG): scripts/make_balanced_drive.py | $(DBC)
+	@mkdir -p $(dir $@)
+	python3 scripts/make_balanced_drive.py $(DBC) $@ --windows $(TRAIN_WINDOWS) --seed $(TRAIN_SEED)
+
 # The prompts of each run of RUNS again, with SHOTS worked examples of each answer added to the
 # fixed part of every question. The examples come from the first POOL windows, with the answers
 # the rules give, and those windows are left out. The run that comes out is <run>.shots<SHOTS>.
@@ -281,6 +313,24 @@ examples:
 	@for run in $(RUNS); do \
 		python3 scripts/add_examples.py --prompts results/$$run.prompts.ndjson --output results/$$run.shots$(SHOTS).prompts.ndjson \
 			--per-answer $(SHOTS) --pool $(POOL) || exit 1; \
+	done
+
+# The prompts of each run of RUNS again, for a model that has to judge by itself: the question
+# without the sentences that state its limits, and each value of a window beside what is known
+# of its signal (with the graph, its quantity, sign and unit; without it, its name in the DBC).
+# The windows and their numbers do not change. The run that comes out is <run>.open.
+open:
+	@for run in $(RUNS); do \
+		python3 scripts/open_prompts.py --prompts results/$$run.prompts.ndjson --output results/$$run.open.prompts.ndjson || exit 1; \
+	done
+
+# The same and, after the summary of each signal, how it moved through the window: its mean in
+# each bucket of the window, in order of time. The receiver writes those means beside each
+# window since version 0.10.0, so the prompts of an earlier run have to be written again:
+# make windows. The run that comes out is <run>.open.series.
+open-series:
+	@for run in $(RUNS); do \
+		python3 scripts/open_prompts.py --series --prompts results/$$run.prompts.ndjson --output results/$$run.open.series.prompts.ndjson || exit 1; \
 	done
 
 # What this machine has. `make status` asks both Pis for it.
@@ -331,7 +381,7 @@ RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) 
 # The settings of the model, handed to make on the gateway.
 MODEL_RUN  := SLOTS=$(SLOTS) SLOT_TOKENS=$(SLOT_TOKENS) THREADS=$(THREADS) MODEL_PORT=$(MODEL_PORT) MODEL_WAIT=$(MODEL_WAIT) ANSWERS=$(ANSWERS)
 
-.PHONY: setup update model-setup menu run run-model accuracy reader-setup reread stop status data compare need-bench
+.PHONY: setup update model-setup menu run run-model accuracy windows reader-setup reread training-set tuned-setup stop status data compare need-bench
 
 need-bench:
 	@test -n "$(GATEWAY_IP)" && test -n "$(VEHICLE_IP)" || { echo "first: make setup GATEWAY_IP=... VEHICLE_IP=...   (the addresses at which this computer reaches each Pi)"; exit 1; }
@@ -390,6 +440,11 @@ menu: need-bench
 		echo " 14) read the prompts of tests 11 and 12 again with the larger model, and score it"; \
 		echo " 15) add $(SHOTS) examples of each answer to those prompts, and read them with the model of the gateway"; \
 		echo " 16) read the prompts with examples with the larger model, on the vehicle Pi"; \
+		echo " 17) the questions without their limits, each value beside what the graph says of it: read by the model of the gateway"; \
+		echo " 18) the same, read by the larger model on the vehicle Pi"; \
+		echo " 19) write the windows of the balanced drive again, each with how its signals moved through it (no model runs)"; \
+		echo " 20) as 17, and after the summary of each signal how it moved through the window: read by the model of the gateway"; \
+		echo " 21) the same, read by the larger model on the vehicle Pi"; \
 		echo "  q) quit"; \
 		printf "choice: "; \
 		read choice || exit 0; \
@@ -412,6 +467,15 @@ menu: need-bench
 				$(MAKE) --no-print-directory reread ON=gateway RUNS="balanced.graph.shots$(SHOTS) balanced.bare.shots$(SHOTS)" ;; \
 			16) $(MAKE) --no-print-directory examples RUNS="balanced.graph balanced.bare" && \
 				$(MAKE) --no-print-directory reread ON=vehicle RUNS="balanced.graph.shots$(SHOTS) balanced.bare.shots$(SHOTS)" ;; \
+			17) $(MAKE) --no-print-directory open RUNS="balanced.graph balanced.bare" && \
+				$(MAKE) --no-print-directory reread ON=gateway RUNS="balanced.graph.open balanced.bare.open" ;; \
+			18) $(MAKE) --no-print-directory open RUNS="balanced.graph balanced.bare" && \
+				$(MAKE) --no-print-directory reread ON=vehicle RUNS="balanced.graph.open balanced.bare.open" ;; \
+			19) $(MAKE) --no-print-directory windows LOG=data/balanced.log ;; \
+			20) $(MAKE) --no-print-directory open-series RUNS="balanced.graph balanced.bare" && \
+				$(MAKE) --no-print-directory reread ON=gateway RUNS="balanced.graph.open.series balanced.bare.open.series" ;; \
+			21) $(MAKE) --no-print-directory open-series RUNS="balanced.graph balanced.bare" && \
+				$(MAKE) --no-print-directory reread ON=vehicle RUNS="balanced.graph.open.series balanced.bare.open.series" ;; \
 			q) exit 0 ;; \
 			*) echo "not an option: $$choice" ;; \
 		esac; \
@@ -465,6 +529,33 @@ accuracy: need-bench
 	@python3 scripts/score_answers.py --prompts results/$(TAG).prompts.ndjson --answers results/$(TAG).answers.ndjson \
 		--save results/$(TAG).tsv | tee results/$(TAG).txt
 
+# The windows of LOG again, as the gateway writes them for the model, with the graph and without
+# it. No model runs: the vehicle sends the recording as fast as it can be read, so it takes
+# seconds. What comes back replaces results/<log>.<graph|bare>.prompts.ndjson. The windows follow
+# the time of the recording, so their text is the one of any earlier run: this checks it against
+# the file it replaces, leaving aside the series, and keeps that file if the text differs.
+WINDOWS_OF = results/$(basename $(notdir $(LOG))).$$mode.prompts.ndjson
+windows: need-bench
+	@test -f $(LOG) || test "$(LOG)" != data/balanced.log || $(MAKE) --no-print-directory balanced
+	@$(SSH) $(VEHICLE_PI) 'cd $(DIR) && test -f $(LOG)' || ! test -f $(LOG) || $(MAKE) --no-print-directory data FILE=$(LOG)
+	@mkdir -p results
+	@text() { sed "s/,\"series\":\[.*\]}$$/}/" "$$1" | cksum; }; \
+	for mode in graph bare; do \
+		echo "=== the windows of $(LOG), $$mode"; \
+		$(MAKE) --no-print-directory run SPEED=0 DURATION= PROMPTS=prompts.ndjson BARE=$$(test $$mode = bare && echo 1) \
+			> .windows.txt 2>&1 || { tail -n 5 .windows.txt; rm -f .windows.txt; exit 1; }; \
+		rm -f .windows.txt; \
+		$(SSH) $(GATEWAY_PI) 'cat $(DIR)/prompts.ndjson' > $(WINDOWS_OF).part || exit 1; \
+		grep -q "\"series\":" $(WINDOWS_OF).part || { rm -f $(WINDOWS_OF).part; \
+			echo "the gateway wrote no series beside its windows: bring it the latest code first (make update)"; exit 1; }; \
+		if test -f $(WINDOWS_OF); then \
+			test "$$(text $(WINDOWS_OF).part)" = "$$(text $(WINDOWS_OF))" && echo "the same text as the file it replaces" \
+				|| { mv $(WINDOWS_OF) $(WINDOWS_OF).before; echo "NOT the text of the file it replaces, which is kept as $(WINDOWS_OF).before"; }; \
+		fi; \
+		mv $(WINDOWS_OF).part $(WINDOWS_OF); \
+		echo "$(WINDOWS_OF): $$(grep -c "\"window\":" $(WINDOWS_OF)) windows of $$(grep -c "\"prefix\":" $(WINDOWS_OF)) questions"; \
+	done
+
 # A reader that reads. When the small model gives the same answer to every window, a run with
 # and without the graph cannot tell what the graph adds. So the prompts of that run are read
 # again by a larger model, on the vehicle Pi, which has the memory for it: nothing is streamed,
@@ -503,6 +594,39 @@ reread: need-bench
 		$(SSH) $(READER_PI) 'cat $(DIR)/reread/answers.ndjson' > $$out.answers.ndjson.part && mv $$out.answers.ndjson.part $$out.answers.ndjson || exit 1; \
 		python3 scripts/score_answers.py --prompts results/$$run.prompts.ndjson --answers $$out.answers.ndjson --save $$out.tsv | tee $$out.txt; \
 	done
+
+# Tuning the model. No prompt has made the small model read a window, so it is shown windows
+# with their right answer and its weights are tuned. The examples are the windows of TRAIN_LOG,
+# a drive that is not the one of the test, as the gateway writes them for the model, with the
+# graph and without it; the answers are the ones the rules give. No model runs here: the vehicle
+# sends the drive as fast as it can be read and the gateway writes the prompts.
+training-set: need-bench $(TRAIN_LOG)
+	@$(SSH) $(VEHICLE_PI) 'cd $(DIR) && test -f $(TRAIN_LOG)' || $(MAKE) --no-print-directory data FILE=$(TRAIN_LOG)
+	@mkdir -p results
+	@for mode in graph bare; do \
+		echo "=== the prompts of $(TRAIN_LOG), $$mode"; \
+		$(MAKE) --no-print-directory run LOG=$(TRAIN_LOG) SPEED=0 DURATION= PROMPTS=prompts.ndjson BARE=$$(test $$mode = bare && echo 1) \
+			> results/train.$$mode.run.txt 2>&1 || { tail -n 5 results/train.$$mode.run.txt; exit 1; }; \
+		$(SSH) $(GATEWAY_PI) 'cat $(DIR)/prompts.ndjson' > results/train.$$mode.prompts.ndjson.part \
+			&& mv results/train.$$mode.prompts.ndjson.part results/train.$$mode.prompts.ndjson || exit 1; \
+		python3 scripts/make_training_set.py --prompts results/train.$$mode.prompts.ndjson --output results/train.$$mode.jsonl || exit 1; \
+	done
+	@echo "tune a model with each: python3 scripts/finetune.py --train results/train.graph.jsonl --output tuned/jedge-graph"
+
+# A tuned model, as the converter of llama.cpp wrote it on the machine that tuned it, goes to
+# the vehicle Pi, which has the tool to narrow it to QUANT bits, and from there to the gateway.
+TUNED_NAME = $(patsubst %-f16,%,$(basename $(notdir $(TUNED))))-$(QUANT).gguf
+tuned-setup: need-bench
+	@test -n "$(TUNED)" && test -f "$(TUNED)" || { echo "name the tuned model, converted to GGUF: make tuned-setup TUNED=tuned/jedge-graph-f16.gguf"; exit 1; }
+	@echo "$(TUNED) to the vehicle Pi: $$(wc -c < $(TUNED)) bytes"
+	@$(SSH) $(VEHICLE_PI) 'mkdir -p $(DIR)/models && cat > $(DIR)/models/$(notdir $(TUNED)).part && mv $(DIR)/models/$(notdir $(TUNED)).part $(DIR)/models/$(notdir $(TUNED))' < $(TUNED)
+	@$(SSH) $(VEHICLE_PI) '$(PI_MAKE) quantize FROM=models/$(notdir $(TUNED)) TO=models/$(TUNED_NAME) QUANT=$(QUANT) THREADS=$(THREADS) JOBS=$(JOBS)' > .quantize.txt 2>&1 \
+		|| { tail -n 15 .quantize.txt; rm -f .quantize.txt; exit 1; }
+	@rm -f .quantize.txt
+	@$(SSH) $(VEHICLE_PI) 'cat $(DIR)/models/$(TUNED_NAME)' | \
+		$(SSH) $(GATEWAY_PI) 'mkdir -p $(DIR)/models && cat > $(DIR)/models/$(TUNED_NAME).part && mv $(DIR)/models/$(TUNED_NAME).part $(DIR)/models/$(TUNED_NAME)'
+	@$(SSH) $(GATEWAY_PI) 'cd $(DIR) && echo "gateway: models/$(TUNED_NAME), $$(stat -c %s models/$(TUNED_NAME)) bytes, sha256 $$(sha256sum < models/$(TUNED_NAME) | cut -d" " -f1)"'
+	@echo "read the prompts of a run with it: make reread ON=gateway READER=models/$(TUNED_NAME) RUNS=balanced.graph"
 
 stop: need-bench
 	@$(SSH) $(VEHICLE_PI) 'pkill -x signal_sender' && echo "vehicle: signal_sender stopped" || echo "vehicle: signal_sender not running"

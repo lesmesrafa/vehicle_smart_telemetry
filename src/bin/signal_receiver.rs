@@ -39,6 +39,7 @@ the knowledge graph:
   --bucket S           seconds of stream time each bucket of a signal covers (1)
   --history S          seconds of history kept per signal: the longest window (10)
   --prompts FILE       write what a language model would read: each prefix once, then each window
+                       and, beside it, the mean of every signal in each bucket of that window
   --bare               in those prefixes, leave out what the graph knows: only the DBC name of each signal
   --rdf FILE           write each window as RDF observations, in N-Triples
   --jelly FILE         write each window as RDF observations, in Jelly";
@@ -106,6 +107,8 @@ struct Knowledge {
     jelly: Option<jelly::Writer<BufWriter<File>>>,
     /// The text of the window being produced. It is reused, so no window reserves memory.
     text: String,
+    /// How the signals moved through that window, as JSON. Reused in the same way.
+    series: String,
     /// Whether the first window of each question is shown on screen.
     show: bool,
     windows: u64,
@@ -179,6 +182,7 @@ impl Knowledge {
             rdf: create("--rdf")?,
             jelly: create("--jelly")?.map(jelly::Writer::new),
             text: String::new(),
+            series: String::new(),
             show,
             windows: 0,
             window_bytes: 0,
@@ -212,7 +216,11 @@ impl Knowledge {
         }
         if let Some(file) = self.prompts.as_mut() {
             let (id, t) = (literal(&question.id, ""), end as f64 * self.live.bucket_s);
-            writeln!(file, "{{\"question\":{id},\"t\":{t},\"window\":{}}}", literal(&self.text, ""))?;
+            // The model reads "window". "series" is for whoever writes the window another way:
+            // the client of the model does not look at it.
+            self.series.clear();
+            question.window_series(&self.live, end, &mut self.series);
+            writeln!(file, "{{\"question\":{id},\"t\":{t},\"window\":{},\"series\":{}}}", literal(&self.text, ""), self.series)?;
             // Written out at once: a model that follows this file answers while the car is still sending.
             file.flush()?;
         }
