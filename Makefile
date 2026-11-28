@@ -56,6 +56,10 @@ FIRST       ?=
 # question, and from how many of the first windows of a run they are taken.
 SHOTS       ?= 2
 POOL        ?= 100
+# The quick test: how many windows of each right answer of each question it keeps, and of which
+# drive (results/<DRIVE>.graph.prompts.ndjson and results/<DRIVE>.bare.prompts.ndjson).
+PER         ?= 40
+DRIVE       ?= balanced
 # Tuning the model: the made-up drive its examples come from, which is not the one of the
 # accuracy test, and the tuned model to take to the gateway, as the converter of llama.cpp
 # wrote it, with the bits it is narrowed to there.
@@ -87,7 +91,7 @@ DBC_SHA256 := d7f822e3a8d220cfde83aec2ae4ed28ddbc44a38ff29bea2e12e3e321d73a607
 DBC_URL    := https://raw.githubusercontent.com/commaai/opendbc/$(DBC_COMMIT)/opendbc/dbc/hyundai_2015_ccan.dbc
 
 .DEFAULT_GOAL := help
-.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights quantize model model-up live ask score balanced examples open open-series info clean
+.PHONY: help build test dbc graph demo demo-graph receive send expected llama weights quantize model model-up live ask score balanced examples open open-series sample table info clean
 
 # What the receiver is told about the knowledge graph.
 KNOWLEDGE = $(if $(GRAPH),--graph $(GRAPH) --questions $(QUESTIONS) $(if $(PROMPTS),--prompts $(PROMPTS)) $(if $(BARE),--bare) $(if $(RDF),--rdf $(RDF)) $(if $(JELLY),--jelly $(JELLY)))
@@ -134,6 +138,9 @@ help:
 	@echo "any        make open       for each run of RUNS, write results/<run>.open.prompts.ndjson: the questions without their limits, each value beside what is known of its signal"
 	@echo "any        make open-series   the same as results/<run>.open.series.prompts.ndjson, and after each summary how the signal moved through the window"
 	@echo "computer   make windows LOG=data/balanced.log   write the windows of LOG again, with the graph and without it; no model runs"
+	@echo "any        make sample     for each run of RUNS, write results/<run>.s$(PER).prompts.ndjson: PER windows of each right answer of each question"
+	@echo "computer   make fast       the quick test: that sample of DRIVE, without limits, with and without the series and the graph, read by READER, and the table of differences; ON=gateway: by the model of the gateway"
+	@echo "any        make table      that table again, from the answers in results/"
 	@echo "computer   make training-set   write results/train.graph.jsonl and results/train.bare.jsonl: windows of another drive with their right answer"
 	@echo "computer   make tuned-setup TUNED=tuned/name-f16.gguf   take a tuned model to the gateway, narrowed to QUANT bits on the vehicle Pi"
 	@echo "computer   make run-model  the same with the language model: each answer live, and what the run cost"
@@ -157,6 +164,7 @@ help:
 	@echo "          ANSWERS=$(ANSWERS) FOLLOW=$(FOLLOW) (1: keep reading while the receiver writes) IDLE=$(IDLE)"
 	@echo "reader:   ON=$(ON) READER=$(READER) RUNS=$(RUNS) FIRST=$(FIRST) (windows of each run; empty: all)"
 	@echo "examples: SHOTS=$(SHOTS) of each answer, from the first POOL=$(POOL) windows of each run"
+	@echo "quick:    PER=$(PER) windows of each answer of each question of DRIVE=$(DRIVE)"
 	@echo "          READER_URL=$(READER_URL)"
 	@echo "tuning:   TRAIN_LOG=$(TRAIN_LOG) TRAIN_WINDOWS=$(TRAIN_WINDOWS) TRAIN_SEED=$(TRAIN_SEED) TUNED=$(TUNED) QUANT=$(QUANT)"
 	@echo "bench:    GATEWAY_IP=$(GATEWAY_IP) VEHICLE_IP=$(VEHICLE_IP) PI_USER=$(PI_USER) DIR=$(DIR)"
@@ -333,6 +341,35 @@ open-series:
 		python3 scripts/open_prompts.py --series --prompts results/$$run.prompts.ndjson --output results/$$run.open.series.prompts.ndjson || exit 1; \
 	done
 
+# A sample of each run of RUNS: PER windows of each right answer of each question, the same ones
+# for every run of the same drive. The run that comes out is <run>.s<PER>.
+sample:
+	@for run in $(RUNS); do \
+		python3 scripts/sample_windows.py --prompts results/$$run.prompts.ndjson --output results/$$run.s$(PER).prompts.ndjson --per-answer $(PER) || exit 1; \
+	done
+
+# The four runs of the quick test, and the table of their differences: what the graph changes,
+# without the series and with it, and what the series changes, with the graph and without it.
+# Each line of the table has its 95 % interval. It is kept under results/.
+QUICK      = $(DRIVE).graph.s$(PER) $(DRIVE).bare.s$(PER)
+QUICK_RUNS = $(foreach run,$(QUICK),$(run).open $(run).open.series)
+table:
+	@for run in $(QUICK_RUNS); do test -f results/$$run.$(READER_TAG).answers.ndjson || \
+		{ echo "results/$$run.$(READER_TAG).answers.ndjson is not here: make fast$(if $(filter gateway,$(ON)), ON=gateway) reads it"; exit 1; }; done
+	@{ for layout in open open.series; do \
+		echo; echo "=== with the graph against without it: $$layout"; \
+		python3 scripts/compare_runs.py --prompts results/$(DRIVE).graph.s$(PER).$$layout.prompts.ndjson \
+			--answers results/$(DRIVE).graph.s$(PER).$$layout.$(READER_TAG).answers.ndjson \
+			--against results/$(DRIVE).bare.s$(PER).$$layout.$(READER_TAG).answers.ndjson || exit 1; \
+	done; \
+	for mode in graph bare; do \
+		echo; echo "=== with the series against without it: $$mode"; \
+		python3 scripts/compare_runs.py --prompts results/$(DRIVE).$$mode.s$(PER).open.series.prompts.ndjson \
+			--answers results/$(DRIVE).$$mode.s$(PER).open.series.$(READER_TAG).answers.ndjson \
+			--against results/$(DRIVE).$$mode.s$(PER).open.$(READER_TAG).answers.ndjson || exit 1; \
+	done; } | tee results/$(DRIVE).s$(PER).$(READER_TAG).table.txt
+	@echo; echo "kept in results/$(DRIVE).s$(PER).$(READER_TAG).table.txt"
+
 # What this machine has. `make status` asks both Pis for it.
 info:
 	@echo "$$(hostname): $$(git log -1 --format='commit %h, %s' 2> /dev/null || echo 'not a git clone')"
@@ -381,7 +418,7 @@ RUN        := LOG=$(LOG) SPEED=$(SPEED) DURATION=$(DURATION) GATEWAY=$(GATEWAY) 
 # The settings of the model, handed to make on the gateway.
 MODEL_RUN  := SLOTS=$(SLOTS) SLOT_TOKENS=$(SLOT_TOKENS) THREADS=$(THREADS) MODEL_PORT=$(MODEL_PORT) MODEL_WAIT=$(MODEL_WAIT) ANSWERS=$(ANSWERS)
 
-.PHONY: setup update model-setup menu run run-model accuracy windows reader-setup reread training-set tuned-setup stop status data compare need-bench
+.PHONY: setup update model-setup menu run run-model accuracy windows reader-setup reread fast training-set tuned-setup stop status data compare need-bench
 
 need-bench:
 	@test -n "$(GATEWAY_IP)" && test -n "$(VEHICLE_IP)" || { echo "first: make setup GATEWAY_IP=... VEHICLE_IP=...   (the addresses at which this computer reaches each Pi)"; exit 1; }
@@ -445,6 +482,8 @@ menu: need-bench
 		echo " 19) write the windows of the balanced drive again, each with how its signals moved through it (no model runs)"; \
 		echo " 20) as 17, and after the summary of each signal how it moved through the window: read by the model of the gateway"; \
 		echo " 21) the same, read by the larger model on the vehicle Pi"; \
+		echo " 22) the quick test: $(PER) windows of each answer, with and without the series and the graph: read by the model of the gateway"; \
+		echo " 23) the same, read by the larger model on the vehicle Pi"; \
 		echo "  q) quit"; \
 		printf "choice: "; \
 		read choice || exit 0; \
@@ -476,6 +515,8 @@ menu: need-bench
 				$(MAKE) --no-print-directory reread ON=gateway RUNS="balanced.graph.open.series balanced.bare.open.series" ;; \
 			21) $(MAKE) --no-print-directory open-series RUNS="balanced.graph balanced.bare" && \
 				$(MAKE) --no-print-directory reread ON=vehicle RUNS="balanced.graph.open.series balanced.bare.open.series" ;; \
+			22) $(MAKE) --no-print-directory fast ON=gateway ;; \
+			23) $(MAKE) --no-print-directory fast ON=vehicle ;; \
 			q) exit 0 ;; \
 			*) echo "not an option: $$choice" ;; \
 		esac; \
@@ -594,6 +635,26 @@ reread: need-bench
 		$(SSH) $(READER_PI) 'cat $(DIR)/reread/answers.ndjson' > $$out.answers.ndjson.part && mv $$out.answers.ndjson.part $$out.answers.ndjson || exit 1; \
 		python3 scripts/score_answers.py --prompts results/$$run.prompts.ndjson --answers $$out.answers.ndjson --save $$out.tsv | tee $$out.txt; \
 	done
+
+# The quick test. Most windows of a drive have the common answer, and how well a model tells
+# the answers apart is set by the rare one: so it keeps PER windows of each right answer of each
+# question, the same ones in every run, and a model reads them four ways: with the graph and
+# without it, without the series and with it, always without the limits. A run whose answers are
+# already under results/, all of them, is not read again, so this can be stopped and started.
+# It ends with the table of differences. The model of the gateway and the larger one can read
+# at the same time, each from its own terminal.
+fast: need-bench
+	@for run in $(DRIVE).graph $(DRIVE).bare; do test -f results/$$run.prompts.ndjson || \
+		{ echo "results/$$run.prompts.ndjson is not here: make windows LOG=data/$(DRIVE).log"; exit 1; }; done
+	@$(MAKE) --no-print-directory sample RUNS="$(DRIVE).graph $(DRIVE).bare" | tail -n 7
+	@$(MAKE) --no-print-directory open open-series RUNS="$(QUICK)" > /dev/null
+	@todo=""; for run in $(QUICK_RUNS); do \
+		want=$$(grep -c "\"window\":" results/$$run.prompts.ndjson); \
+		have=$$(grep -c "" results/$$run.$(READER_TAG).answers.ndjson 2> /dev/null); \
+		test "$$have" = "$$want" && echo "$$run: $(READER_TAG) has already answered its $$want windows" || todo="$$todo $$run"; \
+	done; \
+	test -z "$$todo" || $(MAKE) --no-print-directory reread RUNS="$$todo"
+	@$(MAKE) --no-print-directory table
 
 # Tuning the model. No prompt has made the small model read a window, so it is shown windows
 # with their right answer and its weights are tuned. The examples are the windows of TRAIN_LOG,

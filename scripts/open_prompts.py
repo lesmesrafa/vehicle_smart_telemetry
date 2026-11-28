@@ -32,6 +32,7 @@ whole, to tell apart what each of the changes does.
 """
 import argparse
 import json
+import os
 import re
 import sys
 
@@ -69,13 +70,15 @@ def main():
             if "window" in entry and entry["question"] not in steps:
                 steps[entry["question"]] = every(entry, args.prompts)
 
-    known, written = {}, 0
-    with open(args.output, "w") as out:
+    # Written under another name and given its name at the end: the file is never seen half written.
+    known, written, part = {}, 0, f"{args.output}.{os.getpid()}.part"
+    with open(part, "w") as out:
         for entry in entries:
             question = entry["question"]
             if "prefix" in entry:
                 lines = entry["prefix"].split("\n")
                 if any(l.startswith("Examples,") for l in lines):
+                    os.remove(part)
                     sys.exit(f"{args.prompts} carries worked examples, written the other way: run this on the prompts before add_examples.py")
                 # The list of signals ends where the question starts.
                 listed = [LISTED.match(l) for l in lines[:next(i for i, l in enumerate(lines) if l.startswith("Question:"))]]
@@ -94,6 +97,7 @@ def main():
                     print(f"    - {label}: ..." + (f"; {steps[question]}: ..." if question in steps else ""))
                 continue
             if args.series and "series" not in entry:
+                os.remove(part)
                 sys.exit(f"{args.prompts}: the window of {question} that ends at t={entry['t']} has no series")
             lines = []
             for l in entry["window"].split("\n"):
@@ -108,6 +112,7 @@ def main():
                 lines.append(f"- {known[question][place]}: {found.group(2)}{moved}")
             out.write(json.dumps({"question": question, "t": entry["t"], "window": "\n".join(lines)}) + "\n")
             written += 1
+    os.replace(part, args.output)
     print(f"{written} windows written to {args.output}")
 
 

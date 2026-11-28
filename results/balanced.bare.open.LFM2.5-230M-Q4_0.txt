@@ -1,0 +1,38 @@
+3594 windows with a right answer, 0 left out because a signal had no data
+the limits of hard_braking, turning, speed_band, speed_trend, idling, coasting were not shown to the model: its answers are checked against them all the same,
+and against the number each question is about
+
+hard_braking: 599 windows; right answers: no 522, yes 77
+    the model said: yes 599
+    accuracy 12.9 %; balanced accuracy 50.0 %, against 50.0 % for always the same answer (599 answers)
+    follows how hard it slows down: not at all, it is one answer (the right answers: +0.59; 0 is not at all)
+        where it is lowest: yes 100 % | in the middle: yes 100 % | where it is highest: yes 100 %
+turning: 599 windows; right answers: left 53, right 39, straight 507
+    the model said: right 599
+    accuracy 6.5 %; balanced accuracy 33.3 %, against 33.3 % for always the same answer (599 answers)
+    follows the steering wheel angle, left being positive: not at all, it is one answer (the right answers: +1.00; 0 is not at all)
+        where it is lowest: right 100 % | in the middle: right 100 % | where it is highest: right 100 %
+speed_band: 599 windows; right answers: fast 63, medium 259, slow 178, stopped 99
+    the model said: slow 599
+    accuracy 29.7 %; balanced accuracy 25.0 %, against 25.0 % for always the same answer (599 answers)
+    follows the speed at the end: not at all, it is one answer (the right answers: +0.94; 0 is not at all)
+        where it is lowest: slow 100 % | in the middle: slow 100 % | where it is highest: slow 100 %
+speed_trend: 599 windows; right answers: faster 156, slower 212, steady 231
+    the model said: faster 599
+    accuracy 26.0 %; balanced accuracy 33.3 %, against 33.3 % for always the same answer (599 answers)
+    follows the change of speed: not at all, it is one answer (the right answers: +0.97; 0 is not at all)
+        where it is lowest: faster 100 % | in the middle: faster 100 % | where it is highest: faster 100 %
+idling: 599 windows; right answers: no 512, yes 87
+    the model said: yes 599
+    accuracy 14.5 %; balanced accuracy 50.0 %, against 50.0 % for always the same answer (599 answers)
+    follows how slow its fastest moment is: not at all, it is one answer (the right answers: +0.61; 0 is not at all)
+        where it is lowest: yes 100 % | in the middle: yes 100 % | where it is highest: yes 100 %
+coasting: 599 windows; right answers: no 516, yes 83
+    the model said: yes 599
+    accuracy 13.9 %; balanced accuracy 50.0 %, against 50.0 % for always the same answer (599 answers)
+    follows how much speed it loses: not at all, it is one answer (the right answers: +0.31; 0 is not at all)
+        where it is lowest: yes 100 % | in the middle: yes 100 % | where it is highest: yes 100 %
+
+mean balanced accuracy over 6 questions: 40.3 %
+the answers follow the number of their question by +0.00 on average (+1 always, 0 not at all or with one answer, below 0 the other way round)
+written to results/balanced.bare.open.LFM2.5-230M-Q4_0.tsv
